@@ -96,6 +96,21 @@
           <a :href="downloadUrl" class="dlbtn" @click="onDownload">📥 下载报告 (.docx)</a>
           <button class="dlbtn dlbtn-new" @click="resetAll">🔄 生成新报告</button>
         </div>
+        <!-- 🔴 缺失信息弹窗 -->
+        <div v-if="reportStore.workflowPaused && missingFields.length" class="missing-modal">
+          <div class="missing-card">
+            <h3>⏸️ 需要补充以下信息</h3>
+            <p class="missing-hint">{{ statusMessage }}</p>
+            <div v-for="f in missingFields" :key="f.key" class="missing-field">
+              <label>{{ f.label }} <small>{{ f.desc }}</small></label>
+              <input v-model="missingForm[f.key]" :placeholder="'例如：' + (f.example || '')" />
+            </div>
+            <div class="missing-actions">
+              <button class="dlbtn" @click="submitMissing">✅ 提交并继续生成</button>
+              <button class="dlbtn dlbtn-new" @click="skipMissing">跳过（使用默认值）</button>
+            </div>
+          </div>
+        </div>
         <!-- 实时日志 -->
         <div v-if="showProgress && workflowLogs.length" class="log-panel">
           <div class="log-header">📋 运行日志</div>
@@ -124,6 +139,22 @@ const uploadDone = ref(0)
 const history = reactive([])
 const workflowLogs = ref([])
 const logBody = ref(null)
+const missingFields = ref([])
+const missingForm = reactive({})
+
+async function submitMissing() {
+  const data = {}
+  for (const f of missingFields.value) {
+    if (missingForm[f.key]) data[f.key] = missingForm[f.key]
+  }
+  if (!Object.keys(data).length) { ElMessage.warning('请至少填写一项'); return }
+  missingFields.value = []
+  await reportStore.resumeWorkflow(data)
+}
+function skipMissing() {
+  missingFields.value = []
+  reportStore.resumeWorkflow({})
+}
 
 const isRunning = computed(() => reportStore.isStreaming || reportStore.phase === 'generating')
 const phase = computed(() => reportStore.phase)
@@ -308,7 +339,14 @@ function _collectLogs() {
         setTimeout(() => { if (logBody.value) logBody.value.scrollTop = logBody.value.scrollHeight }, 50)
       }
       if (data.phase === 'complete') { console.log('[POLL] 完成!'); clearInterval(_logTimer) }
-      if (data.phase === 'paused') { console.log('[POLL] 暂停:', data.missing_fields?.length, '个缺失字段'); clearInterval(_logTimer) }
+      if (data.phase === 'paused') {
+        console.log('[POLL] 暂停:', data.missing_fields?.length, '个缺失字段')
+        missingFields.value = data.missing_fields || []
+        if (data.missing_fields?.length) {
+          for (const f of data.missing_fields) { missingForm[f.key] = '' }
+        }
+        clearInterval(_logTimer)
+      }
     } catch(e) { console.error('[POLL] 错误:', e.message || e) }
   }, 2000)
 }
@@ -317,6 +355,7 @@ function onDownload() { setTimeout(() => { showProgress.value = false }, 1000) }
 function resetAll() {
   showProgress.value = false
   workflowLogs.value = []
+  missingFields.value = []
   if (_logTimer) clearInterval(_logTimer)
   files.value = []
   _maxPct = 0
@@ -397,6 +436,15 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .log-line { color: #c0c0d0; }
 .log-line.log-done { color: #4ade80; }
 .log-line.log-running { color: #60a5fa; }
+.missing-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.missing-card { background: #fff; border-radius: 12px; padding: 24px; max-width: 480px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+.missing-card h3 { margin: 0 0 8px; font-size: 18px; }
+.missing-hint { color: #666; font-size: 13px; margin-bottom: 16px; }
+.missing-field { margin-bottom: 12px; }
+.missing-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.missing-field label small { font-weight: 400; color: #999; }
+.missing-field input { width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+.missing-actions { display: flex; gap: 8px; margin-top: 16px; }
 .pbar-wrap { display: flex; align-items: center; gap: 10px; }
 .pbar { flex: 1; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
 .pbar-fill { height: 100%; background: #1d4ed8; border-radius: 4px; transition: width .3s; }
