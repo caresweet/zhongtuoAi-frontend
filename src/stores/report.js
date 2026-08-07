@@ -86,7 +86,7 @@ export const useReportStore = defineStore('report', () => {
     Object.values(chapters.value).filter(ch => ch.status === 'approved').length
   )
 
-  const totalChapters = computed(() => 10)  // Fixed: stability reports always have 10 chapters
+  const totalChapters = computed(() => outline.value?.total || outline.value?.chapters?.length || progressSteps.value.find(s => s.key === 'generation')?.total || 0 || 7)
 
   const canSendMessage = computed(() =>
     !isStreaming.value && ['setup', 'collecting', 'reviewing', 'outline_review', 'chapter_review', 'chapter_generation', 'outline_generation', 'analysis', 'analysis_review', 'integration', 'quality_review', 'review_table', 'assembling'].includes(phase.value)
