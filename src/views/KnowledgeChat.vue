@@ -65,6 +65,12 @@
 
           <!-- Content with markdown -->
           <div class="msg-content" v-html="renderMarkdown(msg.content)" />
+          <!-- Learn button for review results -->
+          <div v-if="msg.isReview && msg._canLearn" class="review-actions">
+            <el-button size="small" type="success" @click="learnCurrentReport(msg)" :loading="isLoading">
+              📚 学习此报告
+            </el-button>
+          </div>
         </div>
       </div>
 
@@ -88,12 +94,25 @@
       </div>
     </div>
 
+    <!-- Mode tabs -->
+    <div class="chat-mode-tabs">
+      <span :class="['mode-tab', { active: mode === 'chat' }]" @click="mode='chat'">💬 问答</span>
+      <span :class="['mode-tab', { active: mode === 'review' }]" @click="mode='review'">🔍 审核</span>
+    </div>
+
     <!-- Input -->
     <div class="chat-input-area">
       <input ref="fileInput" type="file" accept=".pdf,.docx,.doc,.txt,.md,.csv,.jpg,.png,.jpeg" multiple
              style="display:none" @change="onFilesSelected" />
       <input ref="folderInput" type="file" webkitdirectory directory multiple
              style="display:none" @change="onFilesSelected" />
+      <input ref="reportInput" type="file" accept=".docx,.doc,.pdf" style="display:none" @change="onReportFileSelected" />
+      <template v-if="mode === 'review'">
+        <el-button type="warning" text :disabled="isLoading" @click="$refs.reportInput.click()" title="上传报告审核">📋 上传报告</el-button>
+        <el-input v-model="reportText" type="textarea" :rows="2" :autosize="{minRows:1,maxRows:4}" placeholder="或直接粘贴报告文本..." :disabled="isLoading" resize="none" @keydown.enter.exact.prevent="reviewReport" />
+        <el-button type="warning" @click="reviewReport" :disabled="(!reportText.trim() || isLoading)" :loading="isLoading">审核</el-button>
+      </template>
+      <template v-else>
       <el-button text :disabled="isLoading" @click="$refs.fileInput.click()" title="上传文件">📎</el-button>
       <el-button text :disabled="isLoading" @click="$refs.folderInput.click()" title="上传文件夹">📁</el-button>
       <el-input
@@ -115,6 +134,7 @@
       >
         发送
       </el-button>
+      </template>
     </div>
   </div>
 </template>
@@ -125,9 +145,11 @@ import { Promotion } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 
 // ── State ────────────────────────────────────────────────────────────────────
+const mode = ref('chat')  // 'chat' | 'review'
 const domain = ref('stability')
 const messages = ref([])
 const inputText = ref('')
+const reportText = ref('')  // for review mode
 let _abortController = null
 const isLoading = ref(false)
 const msgContainer = ref(null)
@@ -154,6 +176,103 @@ async function onFilesSelected(e) {
   e.target.value = ''  // Reset so same file can be re-selected
   isLoading.value = false
 }
+
+// ── Report Review ──────────────────────────────────────────────────────────
+async function onReportFileSelected(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  isLoading.value = true
+  messages.value.push({ role: 'user', content: `📋 审核报告: ${file.name}`, sources: [] })
+  const aiIdx = messages.value.length
+  messages.value.push({ role: 'assistant', content: '', sources: [], isReview: true })
+  await nextTick(); scrollToBottom()
+
+  try {
+    const form = new FormData(); form.append('file', file)
+    const token = localStorage.getItem('zhongtuo_token') || ''
+    const r = await fetch('/api/knowledge/review-report-file?domain=' + domain.value, {
+      method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: form,
+    })
+    const reader = r.body.getReader(); const decoder = new TextDecoder(); let buf = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      const lines = buf.split('\n'); buf = lines.pop() || ''
+      let evt = ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) evt = line.slice(7).trim()
+        else if (line.startsWith('data: ')) {
+          try {
+            const d = JSON.parse(line.slice(6).trim())
+            if (evt === 'review_result') { messages.value[aiIdx].content = d.summary || ''; messages.value[aiIdx].reviewData = d }
+            else if (evt === 'done' && d.can_learn) { messages.value[aiIdx].learnedNote = '✅ 该报告可存入知识库'; messages.value[aiIdx]._canLearn = true; messages.value[aiIdx]._reportText = d.report_json ? JSON.parse(d.report_json) : null }
+            else if (evt === 'error') { messages.value[aiIdx].content = `⚠️ ${d.message}` }
+          } catch {}
+        }
+      }
+    }
+  } catch (err) { messages.value[aiIdx].content = `⚠️ 审核请求失败: ${err.message}` }
+  isLoading.value = false; e.target.value = ''
+}
+
+async function reviewReport() {
+  const text = reportText.value.trim()
+  if (!text || isLoading.value) return
+  reportText.value = ''
+  isLoading.value = true
+  messages.value.push({ role: 'user', content: '📋 审核报告文本', sources: [] })
+  const aiIdx = messages.value.length
+  messages.value.push({ role: 'assistant', content: '', sources: [], isReview: true })
+  await nextTick(); scrollToBottom()
+
+  try {
+    const token = localStorage.getItem('zhongtuo_token') || ''
+    const r = await fetch('/api/knowledge/review-report', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ text, domain: domain.value }),
+    })
+    const reader = r.body.getReader(); const decoder = new TextDecoder(); let buf = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      const lines = buf.split('\n'); buf = lines.pop() || ''
+      let evt = ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) evt = line.slice(7).trim()
+        else if (line.startsWith('data: ')) {
+          try {
+            const d = JSON.parse(line.slice(6).trim())
+            if (evt === 'review_result') { messages.value[aiIdx].content = d.summary || ''; messages.value[aiIdx].reviewData = d }
+            else if (evt === 'done' && d.can_learn) { messages.value[aiIdx].learnedNote = '✅ 该报告可存入知识库'; messages.value[aiIdx]._canLearn = true; messages.value[aiIdx]._reportText = text }
+            else if (evt === 'error') { messages.value[aiIdx].content = `⚠️ ${d.message}` }
+          } catch {}
+        }
+      }
+    }
+  } catch (err) { messages.value[aiIdx].content = `⚠️ 审核请求失败: ${err.message}` }
+  isLoading.value = false
+}
+
+async function learnCurrentReport(msg) {
+  if (!msg._canLearn || isLoading.value) return
+  const text = msg._reportText
+  if (!text && typeof text !== 'string') return
+  isLoading.value = true
+  try {
+    const token = localStorage.getItem('zhongtuo_token') || ''
+    const r = await fetch('/api/knowledge/learn-report', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ text, domain: domain.value }),
+    })
+    const d = await r.json()
+    if (d.code === 0) { msg.learnedNote = '✅ 报告已存入知识库'; msg._canLearn = false }
+    else { msg.learnedNote = `⚠️ ${d.message}` }
+  } catch (err) { msg.learnedNote = `⚠️ 学习失败: ${err.message}` }
+  isLoading.value = false
+}
+
 // Persistent session for context memory
 const sessionId = ref(localStorage.getItem('kb_chat_session') || generateSessionId())
 
@@ -316,6 +435,14 @@ async function sendCurrent() {
                 if (data.message) {
                   messages.value[aiIdx].learnedNote = data.message
                 }
+                break
+
+              case 'review_result':
+                // Render the structured review report
+                messages.value[aiIdx].content = data.summary || renderReviewMarkdown(data)
+                messages.value[aiIdx].reviewData = data
+                messages.value[aiIdx].isReview = true
+                await nextTick(); scrollToBottom()
                 break
 
               case 'error':
