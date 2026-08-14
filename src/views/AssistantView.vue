@@ -21,6 +21,34 @@
         <p>上传项目资料，AI 自动编制专业报告</p>
       </header>
 
+      <!-- ⓪ 需求输入 -->
+      <section class="gs">
+        <h2>⓪ 输入您的需求</h2>
+        <div class="intent-row">
+          <input v-model="userInput" class="intent-input" placeholder="例如：生成一份土地征收社会稳定风险评估报告"
+                 @keyup.enter="analyzeIntent" :disabled="isRunning" />
+          <button class="gbtn" @click="analyzeIntent" :disabled="!userInput.trim() || isRunning">🔍 分析需求</button>
+        </div>
+        <div v-if="intentResult" class="intent-guide">
+          <h3>📋 识别为：{{ intentResult.guide.title }}（{{ intentResult.domain === 'stability' ? '稳评' : '投标' }}）</h3>
+          <p class="intent-desc">{{ intentResult.guide.description }}</p>
+          <p class="guide-label">必传资料：</p>
+          <ul class="guide-list">
+            <li v-for="m in intentResult.guide.required" :key="m.name">
+              <strong>{{ m.name }}</strong>（{{ m.format }}）— {{ m.note }}
+            </li>
+          </ul>
+          <template v-if="intentResult.guide.optional.length">
+            <p class="guide-label">可选资料：</p>
+            <ul class="guide-list">
+              <li v-for="m in intentResult.guide.optional" :key="m.name">
+                <strong>{{ m.name }}</strong>（{{ m.format }}）— {{ m.note }}
+              </li>
+            </ul>
+          </template>
+        </div>
+      </section>
+
       <!-- ① Domain -->
       <section class="gs">
         <h2>① 选择报告类型</h2>
@@ -136,6 +164,27 @@ const reportStore = useReportStore()
 
 const domain = ref('stability')
 const files = ref([])
+const userInput = ref('')
+const intentResult = ref(null)
+
+async function analyzeIntent() {
+  if (!userInput.value.trim()) return
+  try {
+    const res = await fetch('/api/v1/reports/analyze-intent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_input: userInput.value }),
+    })
+    const data = await res.json()
+    if (data && data.data) {
+      intentResult.value = data.data
+      domain.value = data.data.domain
+      ElMessage.success('需求分析完成，请按引导上传资料')
+    }
+  } catch (e) {
+    ElMessage.error('需求分析失败：' + e.message)
+  }
+}
 const showProgress = ref(false)
 const uploading = ref(false)
 const uploadTotal = ref(0)
@@ -417,6 +466,16 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 
 <style scoped>
 .gen-layout { display: flex; height: 100vh; overflow: hidden; }
+.intent-row { display: flex; gap: 10px; margin-bottom: 12px; }
+.intent-input { flex: 1; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; outline: none; }
+.intent-input:focus { border-color: #1d4ed8; }
+.intent-guide { background: #f0f7ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px; }
+.intent-guide h3 { font-size: 14px; margin: 0 0 6px; color: #1e40af; }
+.intent-desc { font-size: 13px; color: #4b5563; margin: 0 0 10px; }
+.guide-label { font-size: 13px; font-weight: 600; color: #374151; margin: 10px 0 6px; }
+.guide-list { list-style: none; padding: 0; margin: 0; }
+.guide-list li { font-size: 13px; color: #374151; padding: 4px 0; }
+.guide-list strong { color: #1d4ed8; }
 .sidebar { width: 220px; background: #f8fafc; border-right: 1px solid #e5e7eb; padding: 16px; overflow-y: auto; flex-shrink: 0; }
 .sidebar h3 { font-size: 13px; margin: 0 0 12px; color: #374151; }
 .hist-list { display: flex; flex-direction: column; gap: 8px; }
