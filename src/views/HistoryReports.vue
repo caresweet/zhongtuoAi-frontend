@@ -19,10 +19,13 @@
         <el-divider>评估意见（可添加多条）</el-divider>
         <div v-for="(fb, i) in expertForm.feedback" :key="i" class="fb-item">
           <el-row :gutter="8">
-            <el-col :span="6">
-              <el-input-number v-model="fb.chapter_num" :min="0" :max="10" placeholder="章节" controls-position="right" style="width:100%" />
+            <el-col :span="7">
+              <el-select v-model="fb.chapter_num" placeholder="问题所在章节" style="width:100%">
+                <el-option label="全文通用" :value="0" />
+                <el-option v-for="n in 10" :key="n" :label="'第' + n + '章'" :value="n" />
+              </el-select>
             </el-col>
-            <el-col :span="6">
+            <el-col :span="5">
               <el-select v-model="fb.severity" style="width:100%">
                 <el-option label="一般" value="warning" />
                 <el-option label="严重" value="error" />
