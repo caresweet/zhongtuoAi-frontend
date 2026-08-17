@@ -18,36 +18,39 @@
         </el-form-item>
         <el-divider>评估意见（可添加多条）</el-divider>
         <div v-for="(fb, i) in expertForm.feedback" :key="i" class="fb-item">
-          <el-row :gutter="8">
-            <el-col :span="7">
-              <el-select v-model="fb.chapter_num" placeholder="问题所在章节" style="width:100%">
-                <el-option label="全文通用" :value="0" />
-                <el-option v-for="n in 10" :key="n" :label="'第' + n + '章'" :value="n" />
-              </el-select>
-            </el-col>
-            <el-col :span="5">
-              <el-select v-model="fb.severity" style="width:100%">
-                <el-option label="一般" value="warning" />
-                <el-option label="严重" value="error" />
-                <el-option label="致命" value="critical" />
-              </el-select>
-            </el-col>
-            <el-col :span="12">
-              <el-select v-model="fb.issue_type" style="width:100%" placeholder="问题类型">
-                <el-option label="表格格式" value="table_format" />
-                <el-option label="AI味/口语化" value="ai_tone" />
-                <el-option label="数据错误" value="data_error" />
-                <el-option label="逻辑问题" value="logic" />
-                <el-option label="内容缺失" value="missing" />
-                <el-option label="其他" value="other" />
-              </el-select>
-            </el-col>
-          </el-row>
-          <el-input v-model="fb.issue_desc" placeholder="问题描述（哪里不好）" style="margin-top:6px" />
-          <el-input v-model="fb.suggestion" placeholder="优化建议（应该怎么写）" style="margin-top:6px" />
-          <el-button text type="danger" @click="expertForm.feedback.splice(i, 1)">删除此条</el-button>
+          <div class="fb-head">
+            <span class="fb-index">意见 {{ i + 1 }}</span>
+            <el-button text type="danger" size="small" @click="expertForm.feedback.splice(i, 1)">删除</el-button>
+          </div>
+          <div class="fb-row">
+            <el-select v-model="fb.chapter_num" placeholder="问题所在章节" style="width:130px">
+              <el-option label="全文通用" :value="0" />
+              <el-option v-for="n in 10" :key="n" :label="'第' + n + '章'" :value="n" />
+            </el-select>
+            <el-select v-model="fb.severity" style="width:110px">
+              <el-option label="一般" value="warning" />
+              <el-option label="严重" value="error" />
+              <el-option label="致命" value="critical" />
+            </el-select>
+            <el-select v-model="fb.issue_type" placeholder="问题类型" style="width:140px">
+              <el-option label="表格格式" value="table_format" />
+              <el-option label="AI味/口语化" value="ai_tone" />
+              <el-option label="数据错误" value="data_error" />
+              <el-option label="逻辑问题" value="logic" />
+              <el-option label="内容缺失" value="missing" />
+              <el-option label="其他" value="other" />
+            </el-select>
+          </div>
+          <div class="fb-field">
+            <span class="fb-label">问题描述</span>
+            <el-input v-model="fb.issue_desc" type="textarea" :rows="2" resize="none" placeholder="哪里不好，请具体说明" />
+          </div>
+          <div class="fb-field">
+            <span class="fb-label">优化建议</span>
+            <el-input v-model="fb.suggestion" type="textarea" :rows="2" resize="none" placeholder="应该怎么写" />
+          </div>
         </div>
-        <el-button @click="expertForm.feedback.push({ chapter_num: 0, issue_type: '', issue_desc: '', suggestion: '', severity: 'warning' })">+ 添加一条意见</el-button>
+        <el-button type="primary" plain @click="expertForm.feedback.push({ chapter_num: 0, issue_type: '', issue_desc: '', suggestion: '', severity: 'warning' })">+ 添加一条意见</el-button>
       </el-form>
       <template #footer>
         <el-button @click="expertReviewDialog = false">取消</el-button>
@@ -237,5 +240,51 @@ function onDownloadReport(report) {
   font-weight: 600;
   margin: 0;
   color: #303133;
+}
+
+/* ── 专家评估弹窗 ── */
+.fb-item {
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: #fafbfc;
+}
+.fb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.fb-index {
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
+}
+.fb-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.fb-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.fb-label {
+  width: 56px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: #606266;
+  line-height: 32px;
+}
+.fb-field .el-textarea {
+  flex: 1;
+}
+/* 弹窗内表单占满但内容有间距 */
+.el-dialog .el-form-item {
+  margin-bottom: 14px;
 }
 </style>
