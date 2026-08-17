@@ -50,7 +50,7 @@
       </section>
 
       <!-- ① Domain -->
-      <section class="gs">
+      <section class="gs" v-if="intentResult">
         <h2>① 选择报告类型</h2>
         <div class="dc">
           <div :class="['dc-card', { sel: domain === 'stability' }]" @click="domain = 'stability'">
@@ -65,7 +65,7 @@
       </section>
 
       <!-- ② Upload -->
-      <section class="gs">
+      <section class="gs" v-if="intentResult">
         <h2>② 上传资料文档 <span v-if="uploading" class="up-stat">上传中 {{ uploadDone }}/{{ uploadTotal }}...</span></h2>
 
         <!-- 需求分析后：按资料分类分步上传 -->
@@ -126,7 +126,7 @@
       </section>
 
       <!-- ③ Generate + Cancel -->
-      <section class="gs">
+      <section class="gs" v-if="intentResult">
         <h2>③ 开始生成</h2>
         <div class="gen-row">
           <button class="gbtn" :disabled="!canGenerate || isRunning" @click="startGenerate">
