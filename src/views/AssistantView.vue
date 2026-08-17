@@ -167,9 +167,9 @@
         <div v-if="reportStore.workflowPaused && missingFields.length" class="missing-modal">
           <div class="missing-card">
             <h3>⏸️ 需要补充以下信息</h3>
-            <p class="missing-hint">{{ statusMessage }}</p>
+            <p class="missing-hint">请填写后继续生成，或点击「跳过」使用默认值继续</p>
             <div v-for="f in missingFields" :key="f.key" class="missing-field">
-              <label>{{ f.label }} <small>{{ f.desc }}</small></label>
+              <label>{{ f.label }}</label>
               <input v-model="missingForm[f.key]" :placeholder="'例如：' + (f.example || '')" />
             </div>
             <div class="missing-actions">
@@ -606,7 +606,19 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .missing-field { margin-bottom: 12px; }
 .missing-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .missing-field label small { font-weight: 400; color: #999; }
-.missing-field input { width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+.missing-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.missing-field input:focus {
+  outline: none;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.1);
+}
 .missing-actions { display: flex; gap: 8px; margin-top: 16px; }
 .pbar-wrap { display: flex; align-items: center; gap: 10px; }
 .pbar { flex: 1; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
