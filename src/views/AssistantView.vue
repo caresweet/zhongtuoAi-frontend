@@ -527,7 +527,7 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .fl-mat { font-size: 11px; color: #1d4ed8; background: #eff6ff; border-radius: 4px; padding: 1px 6px; flex-shrink: 0; }
 .gen-layout { display: flex; height: 100vh; overflow: hidden; }
 .intent-row { display: flex; gap: 10px; margin-bottom: 12px; }
-.intent-input { flex: 1; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; outline: none; }
+.intent-input { flex: 1; min-width: 0; box-sizing: border-box; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; outline: none; }
 .intent-input:focus { border-color: #1d4ed8; }
 .intent-guide { background: #f0f7ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px; }
 .intent-guide h3 { font-size: 14px; margin: 0 0 6px; color: #1e40af; }
