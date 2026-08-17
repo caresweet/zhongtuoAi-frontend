@@ -67,25 +67,60 @@
       <!-- ② Upload -->
       <section class="gs">
         <h2>② 上传资料文档 <span v-if="uploading" class="up-stat">上传中 {{ uploadDone }}/{{ uploadTotal }}...</span></h2>
-        <div class="up-zone" @click="clickFile" @dragover.prevent @drop.prevent="onDrop">
-          <div class="up-inner">
-            <span class="up-icon">📁</span>
-            <p v-if="!uploading">拖拽文件到此处，或点击选择</p>
-            <p v-else>正在上传...</p>
-            <small>支持 PDF、DOCX、DOC、TXT、图片、文件夹</small>
+
+        <!-- 需求分析后：按资料分类分步上传 -->
+        <template v-if="intentResult && intentResult.guide">
+          <div v-for="m in intentResult.guide.required" :key="m.name" class="mat-card">
+            <div class="mat-head">
+              <span class="mat-name">📄 {{ m.name }}</span>
+              <span class="mat-format">（{{ m.format }}）</span>
+              <span class="mat-note">{{ m.note }}</span>
+              <button class="ubtn mat-upload" @click.stop="clickFileForMaterial(m.name)" :disabled="isRunning">📎 上传</button>
+            </div>
+            <div class="mat-files" v-if="materialFiles(m.name).length">
+              <span v-for="(f, i) in materialFiles(m.name)" :key="i" class="mat-file">
+                {{ f.name }} <button class="fl-del" @click="removeFile(f)">✕</button>
+              </span>
+            </div>
+            <div v-else class="mat-empty">未上传</div>
           </div>
-        </div>
+          <details v-if="intentResult.guide.optional && intentResult.guide.optional.length" class="mat-optional">
+            <summary>可选资料（{{ intentResult.guide.optional.length }} 项）</summary>
+            <div v-for="m in intentResult.guide.optional" :key="m.name" class="mat-card">
+              <div class="mat-head">
+                <span class="mat-name">📄 {{ m.name }}</span>
+                <span class="mat-format">（{{ m.format }}）</span>
+                <button class="ubtn mat-upload" @click.stop="clickFileForMaterial(m.name)" :disabled="isRunning">📎 上传</button>
+              </div>
+            </div>
+          </details>
+        </template>
+
+        <!-- 需求分析前：通用上传框 + 提示 -->
+        <template v-else>
+          <div class="up-zone" @click="clickFile" @dragover.prevent @drop.prevent="onDrop">
+            <div class="up-inner">
+              <span class="up-icon">📁</span>
+              <p v-if="!uploading">拖拽文件到此处，或点击选择</p>
+              <p v-else>正在上传...</p>
+              <small>支持 PDF、DOCX、DOC、TXT、图片、文件夹</small>
+            </div>
+          </div>
+          <p class="ghint">💡 建议先在上方「⓪ 输入您的需求」，系统会告诉你该传什么资料</p>
+        </template>
+
+        <!-- 全部已上传文件汇总 -->
         <div v-if="files.length" class="fl">
           <div v-for="(f, i) in files" :key="i" class="fl-item">
             <span :class="['fl-badge', badge(f)]">{{ ext(f) }}</span>
             <span class="fl-name">{{ f.name }}</span>
+            <span v-if="f.material_type" class="fl-mat">{{ f.material_type }}</span>
             <span class="fl-size">{{ fmtSize(f.size) }}</span>
-            <button class="fl-del" @click="files.splice(i, 1)">✕</button>
+            <button class="fl-del" @click="removeFile(f)">✕</button>
           </div>
         </div>
         <div class="up-btns">
-          <button class="ubtn" @click.stop="clickFile" :disabled="isRunning">📎 选择文件</button>
-          <button class="ubtn" @click.stop="clickFolder" :disabled="isRunning">📁 选择文件夹</button>
+          <button class="ubtn" @click.stop="clickFolder" :disabled="isRunning">📁 选择文件夹（整批上传）</button>
           <button v-if="files.length && !isRunning" class="ubtn ubtn-clear" @click="files=[]">清空全部</button>
         </div>
       </section>
@@ -317,12 +352,25 @@ watch(() => reportStore.phase, (p) => {
 })
 
 // ── Upload ──
+const currentMaterial = ref('')
+
 function clickFile() {
   const inp = document.createElement('input')
   inp.type = 'file'; inp.multiple = true
   inp.accept = '.png,.jpg,.jpeg,.gif,.webp,.pdf,.docx,.doc,.xlsx,.xls,.csv,.txt'
   inp.onchange = (e) => { onFiles(e); inp.remove() }
   inp.click()
+}
+function clickFileForMaterial(name) {
+  currentMaterial.value = name
+  clickFile()
+}
+function materialFiles(name) {
+  return files.value.filter(f => f.material_type === name)
+}
+function removeFile(f) {
+  const i = files.value.indexOf(f)
+  if (i >= 0) files.value.splice(i, 1)
 }
 function clickFolder() {
   const inp = document.createElement('input')
@@ -351,7 +399,7 @@ async function addFiles(fileList) {
       }
       const r = await reportStore.uploadFile(f)
       console.log(`[UPLOAD] ${f.name}:`, r?.file_path || 'FAILED')
-      if (r?.file_path) files.value.push({ path: r.file_path, url: r.url || '', name: r.original_name || f.name, size: f.size || 0, ft: r.file_type || 'file' })
+      if (r?.file_path) files.value.push({ path: r.file_path, url: r.url || '', name: r.original_name || f.name, size: f.size || 0, ft: r.file_type || 'file', material_type: currentMaterial.value })
       uploadDone.value++
     } catch (e) { console.error(`[UPLOAD] ${f.name} 失败:`, e); ElMessage.error(f.name + ' 上传失败') }
   }
@@ -465,6 +513,18 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 </script>
 
 <style scoped>
+.mat-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; margin-bottom: 10px; background: #fafbfc; }
+.mat-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mat-name { font-weight: 600; color: #1f2937; font-size: 14px; }
+.mat-format { color: #6b7280; font-size: 12px; }
+.mat-note { color: #9ca3af; font-size: 12px; flex: 1; }
+.mat-upload { padding: 6px 14px; font-size: 13px; }
+.mat-files { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.mat-file { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #374151; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 3px 8px; }
+.mat-empty { margin-top: 6px; font-size: 12px; color: #d1d5db; }
+.mat-optional { margin-top: 8px; font-size: 13px; color: #6b7280; }
+.mat-optional summary { cursor: pointer; }
+.fl-mat { font-size: 11px; color: #1d4ed8; background: #eff6ff; border-radius: 4px; padding: 1px 6px; flex-shrink: 0; }
 .gen-layout { display: flex; height: 100vh; overflow: hidden; }
 .intent-row { display: flex; gap: 10px; margin-bottom: 12px; }
 .intent-input { flex: 1; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; outline: none; }
