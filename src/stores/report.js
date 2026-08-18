@@ -1269,14 +1269,14 @@ export const useReportStore = defineStore('report', () => {
       } catch(e) { /* polling error, ignore */ }
     }, 5000)  // Poll every 5 seconds
 
-    // 🔴 Safety timeout: 30 minutes (LLM generation can take 15-25 min)
+    // 🔴 Safety timeout: 45 minutes (质量循环 + 逐章生成可能超30分钟)
     _pollSafetyTimeout = setTimeout(() => {
       if (_pollTimer && workflowRunning.value) {
-        _stopPolling('⏰ 生成超时（30分钟），请刷新页面重试')
+        _stopPolling('⏰ 生成超时（45分钟），请刷新页面重试')
         workflowRunning.value = false
         phase.value = 'error'
       }
-    }, 1800000)  // 30 min
+    }, 2700000)  // 45 min
   }
 
   async function resumeWorkflow(data) {
