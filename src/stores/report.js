@@ -1269,14 +1269,9 @@ export const useReportStore = defineStore('report', () => {
       } catch(e) { /* polling error, ignore */ }
     }, 5000)  // Poll every 5 seconds
 
-    // 🔴 Safety timeout: 45 minutes (质量循环 + 逐章生成可能超30分钟)
-    _pollSafetyTimeout = setTimeout(() => {
-      if (_pollTimer && workflowRunning.value) {
-        _stopPolling('⏰ 生成超时（45分钟），请刷新页面重试')
-        workflowRunning.value = false
-        phase.value = 'error'
-      }
-    }, 2700000)  // 45 min
+    // 🔴 不做时间限制——生成时长不固定，持续轮询直到完成。
+    // 前端不因超时中断生成（后台 LLM 生成耗时取决于章节数/质量循环）。
+    // 移除固定超时，改为只在后端明确报错时停止。
   }
 
   async function resumeWorkflow(data) {
