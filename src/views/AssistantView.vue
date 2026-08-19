@@ -178,6 +178,47 @@
             </div>
           </div>
         </div>
+        <!-- 🔴 人工复核面板：Skill 审核发现问题且 AI 重试耗尽 → 需人工介入 -->
+        <div v-if="pendingHumanChapters && humanQueue.length" class="missing-modal">
+          <div class="missing-card human-card">
+            <h3>👤 {{ humanQueue.length }} 个章节需人工复核</h3>
+            <p class="missing-hint">
+              AI 多次重写仍未能通过审核，或存在需人工确认的问题。
+              请选择处理方式：<b>给修改思路</b>（交给 AI 携意见重写）或 <b>直接审批放行</b>。
+            </p>
+            <div v-for="ch in humanQueue" :key="ch.chapter" class="human-item">
+              <div class="hr-head">
+                <strong>第{{ ch.chapter }}章 {{ ch.title }}</strong>
+                <span class="hr-status" :class="ch.status">{{ ch.status }}</span>
+                <span class="hr-retry" v-if="ch.retry_count">重试 {{ ch.retry_count }}/{{ ch.max_retry }}</span>
+              </div>
+              <ul v-if="ch.violations && ch.violations.length" class="hr-violations">
+                <li v-for="(v, i) in ch.violations" :key="i">
+                  <span class="sev" :class="v.severity">{{ v.severity }}</span>
+                  <span class="disp" :class="v.disposition">{{ v.disposition }}</span>
+                  {{ v.message }}
+                </li>
+              </ul>
+              <div class="hr-actions">
+                <textarea v-model="humanOpinionForm[ch.chapter]" class="hr-opinion"
+                  placeholder="输入您的修改思路，AI 将携带该意见重写本章（例如：支持率应为100%，删除反对表述）"
+                  :disabled="humanDone[ch.chapter]" rows="2"></textarea>
+                <div class="hr-btns">
+                  <button class="dlbtn" :disabled="humanDone[ch.chapter] || humanBusy[ch.chapter]"
+                    @click="submitHumanOpinion(ch.chapter)">✍️ 提交意见并AI重写</button>
+                  <button class="dlbtn dlbtn-new" :disabled="humanDone[ch.chapter] || humanBusy[ch.chapter]"
+                    @click="approveHumanChapter(ch.chapter)">✅ 审批通过（跳过AI重写）</button>
+                </div>
+              </div>
+            </div>
+            <div class="hr-global">
+              <button class="dlbtn" :disabled="humanProcessing" @click="triggerHumanRewrite">
+                {{ humanProcessing ? '⏳ 正在继续生成...' : '🚀 继续生成（处理已提交的意见/审批）' }}
+              </button>
+              <button class="dlbtn dlbtn-new" @click="resetAll">取消</button>
+            </div>
+          </div>
+        </div>
         <!-- 实时日志 -->
         <div v-if="showProgress && workflowLogs.length" class="log-panel">
           <div class="log-header">📋 运行日志</div>
@@ -201,6 +242,14 @@ const domain = ref('stability')
 const files = ref([])
 const userInput = ref('')
 const intentResult = ref(null)
+
+// 🔴 人工复核状态（Skill 审核发现问题、AI 重试耗尽后由前端介入）
+const pendingHumanChapters = ref(false)   // 是否处于人工复核暂停
+const humanQueue = ref([])                // 待复核章节 [{chapter,title,status,violations,...}]
+const humanOpinionForm = reactive({})     // chapter -> 人工意见文本
+const humanDone = reactive({})            // chapter -> 已处理标记
+const humanBusy = reactive({})            // chapter -> 提交中
+const humanProcessing = ref(false)        // 触发重写/继续生成中
 
 async function analyzeIntent() {
   if (!userInput.value.trim()) return
@@ -472,6 +521,25 @@ function _collectLogs() {
       if (data.phase === 'complete') { console.log('[POLL] 完成!'); clearInterval(_logTimer) }
       if (data.phase === 'error') { console.log('[POLL] 错误!'); clearInterval(_logTimer) }
       if (data.phase === 'idle') { console.log('[POLL] 会话过期'); clearInterval(_logTimer) }
+      if (data.phase === 'human_review' || (data.phase === 'paused' && data.human_queue?.length)) {
+        // 🔴 人工复核暂停：拉取待复核章节明细（含违规），停止轮询等用户处理
+        console.log('[POLL] 人工复核:', data.human_queue?.length, '章待处理')
+        reportStore.phase = 'human_review'
+        reportStore.workflowPaused = true
+        pendingHumanChapters.value = true
+        humanProcessing.value = false
+        clearInterval(_logTimer)
+        try {
+          const { getHumanQueue } = await import('@/api/report')
+          const hq = await getHumanQueue(reportStore.sessionId)
+          humanQueue.value = (hq.data?.chapters) || []
+          // 回填已提交过的意见/审批状态
+          for (const c of humanQueue.value) {
+            if (c.human_opinion) humanOpinionForm[c.chapter] = c.human_opinion
+            if (c.human_approved || c.human_override || c.human_opinion) humanDone[c.chapter] = true
+          }
+        } catch (e) { console.error('[POLL] 拉取人工复核队列失败:', e.message || e) }
+      }
       if (data.phase === 'paused') {
         console.log('[POLL] 暂停:', data.missing_fields?.length, '个缺失字段')
         missingFields.value = data.missing_fields || []
@@ -488,6 +556,47 @@ function _collectLogs() {
 }
 
 function onDownload() { setTimeout(() => { showProgress.value = false }, 1000) }
+// 🔴 人工复核：提交修改思路 → 交给 AI 携意见重写本章
+async function submitHumanOpinion(ch) {
+  const opinion = (humanOpinionForm[ch] || '').trim()
+  if (!opinion) { ElMessage.warning('请先填写修改思路'); return }
+  humanBusy[ch] = true
+  try {
+    const { submitHumanOpinion } = await import('@/api/report')
+    await submitHumanOpinion(reportStore.sessionId, ch, 'opinion', { opinion })
+    humanDone[ch] = true
+    ElMessage.success(`第${ch}章意见已提交，AI 将携意见重写`)
+  } catch (e) { ElMessage.error('提交失败: ' + (e.message || e)) }
+  finally { humanBusy[ch] = false }
+}
+// 🔴 人工复核：直接审批放行 → 跳过该章后续 AI 审核重写
+async function approveHumanChapter(ch) {
+  humanBusy[ch] = true
+  try {
+    const { submitHumanOpinion } = await import('@/api/report')
+    await submitHumanOpinion(reportStore.sessionId, ch, 'approve')
+    humanDone[ch] = true
+    ElMessage.success(`第${ch}章已审批放行`)
+  } catch (e) { ElMessage.error('审批失败: ' + (e.message || e)) }
+  finally { humanBusy[ch] = false }
+}
+// 🔴 人工复核：触发继续生成（处理已提交的意见/审批后 resume 工作流）
+async function triggerHumanRewrite() {
+  humanProcessing.value = true
+  try {
+    const { triggerHumanRewrite } = await import('@/api/report')
+    const res = await triggerHumanRewrite(reportStore.sessionId)
+    ElMessage.success(res?.data?.message || '已继续生成')
+    pendingHumanChapters.value = false
+    humanQueue.value = []
+    reportStore.workflowPaused = false
+    // 重新开始轮询工作流状态
+    _collectLogs()
+  } catch (e) {
+    ElMessage.error('继续生成失败: ' + (e.message || e))
+    humanProcessing.value = false
+  }
+}
 function resetAll() {
   showProgress.value = false
   workflowLogs.value = []
@@ -495,6 +604,13 @@ function resetAll() {
   if (_logTimer) clearInterval(_logTimer)
   files.value = []
   _maxPct = 0
+  // 🔴 清理人工复核状态
+  pendingHumanChapters.value = false
+  humanQueue.value = []
+  humanProcessing.value = false
+  Object.keys(humanOpinionForm).forEach(k => delete humanOpinionForm[k])
+  Object.keys(humanDone).forEach(k => delete humanDone[k])
+  Object.keys(humanBusy).forEach(k => delete humanBusy[k])
   // 🔴 Cancel any running workflow and reset store
   reportStore.cancelWorkflow()
   reportStore.downloadUrl = ''

@@ -115,6 +115,23 @@ export function getWorkflowStatus(sessionId) {
   return client.get(`/reports/generate/${sessionId}/workflow/status`)
 }
 
+// 🔴 人工复核闭环 API
+// 获取待人工复核章节列表（含违规）
+export function getHumanQueue(sessionId) {
+  return client.get(`/reports/generate/${sessionId}/human-queue`)
+}
+// 提交人工意见 / 审批放行 / 人工改写
+// mode: opinion(给思路AI重写) | approve(审批放行) | override(人工改写全文)
+export function submitHumanOpinion(sessionId, chapter, mode, payload = {}) {
+  return client.post(`/reports/generate/${sessionId}/human/opinion`, {
+    chapter, mode, ...payload,
+  })
+}
+// 触发 AI 携人工意见重写排队章节
+export function triggerHumanRewrite(sessionId, chapters = []) {
+  return client.post(`/reports/generate/${sessionId}/human/rewrite`, { chapters })
+}
+
 // Get material-analysis summary for a session
 export function getMaterialSummary(sessionId) {
   return client.get(`/reports/generate/${sessionId}/materials`)
