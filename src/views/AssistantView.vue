@@ -736,6 +736,48 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
   box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.1);
 }
 .missing-actions { display: flex; gap: 8px; margin-top: 16px; }
+/* 🔴 人工复核面板：可滚动、分章节卡片、违规高亮 */
+.missing-card { max-height: 85vh; overflow-y: auto; }
+.missing-card::-webkit-scrollbar { width: 8px; }
+.missing-card::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.missing-card::-webkit-scrollbar-track { background: #f1f5f9; }
+.human-card { max-width: 760px; }
+.human-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: #fafbfc;
+}
+.hr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.hr-head strong { font-size: 14px; color: #111827; }
+.hr-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #f59e0b; color: #fff; }
+.hr-status.queued { background: #f59e0b; }
+.hr-status.human_reviewed { background: #8b5cf6; }
+.hr-status.approved, .hr-status.passed { background: #059669; }
+.hr-retry { font-size: 11px; color: #9ca3af; }
+.hr-violations { list-style: none; margin: 0 0 8px; padding: 0; }
+.hr-violations li {
+  font-size: 13px; color: #374151; padding: 4px 0 4px 0;
+  border-bottom: 1px dashed #e5e7eb; display: flex; gap: 6px; align-items: baseline;
+}
+.hr-violations li:last-child { border-bottom: none; }
+.sev { font-size: 11px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; flex-shrink: 0; }
+.sev.critical { background: #fee2e2; color: #dc2626; }
+.sev.error { background: #ffedd5; color: #ea580c; }
+.sev.warning { background: #fef3c7; color: #d97706; }
+.disp { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: #dbeafe; color: #1d4ed8; white-space: nowrap; flex-shrink: 0; }
+.disp.human { background: #ede9fe; color: #7c3aed; }
+.hr-actions { display: flex; flex-direction: column; gap: 8px; }
+.hr-opinion {
+  width: 100%; box-sizing: border-box; padding: 8px 12px;
+  border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;
+  resize: vertical; font-family: inherit;
+}
+.hr-opinion:focus { outline: none; border-color: #1d4ed8; box-shadow: 0 0 0 2px rgba(29,78,216,0.1); }
+.hr-opinion:disabled { background: #f3f4f6; color: #9ca3af; }
+.hr-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.hr-global { margin-top: 4px; display: flex; gap: 8px; justify-content: flex-end; }
 .pbar-wrap { display: flex; align-items: center; gap: 10px; }
 .pbar { flex: 1; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
 .pbar-fill { height: 100%; background: #1d4ed8; border-radius: 4px; transition: width .3s; }
