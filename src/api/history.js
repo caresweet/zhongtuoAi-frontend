@@ -1,4 +1,5 @@
 import client from './client'
+import { downloadFile } from '@/utils/download'
 
 // List reports
 export function listReports(params = {}) {
@@ -25,9 +26,9 @@ export function deleteReport(id) {
   return client.delete(`/history/reports/${id}`)
 }
 
-// Download report file URL
+// 下载报告文件（带鉴权，见 utils/download.js 里为什么不能用直链）
 export function downloadReport(id) {
-  return `/api/v1/history/reports/${id}/download`
+  return downloadFile(`/api/v1/history/reports/${id}/download`)
 }
 
 // Dashboard stats

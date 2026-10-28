@@ -1,4 +1,5 @@
 import client from './client'
+import { downloadFile } from '@/utils/download'
 
 // Upload template
 export function uploadTemplate(formData) {
@@ -40,7 +41,8 @@ export function getPlaceholders(id) {
 
 // Download template file
 export function downloadTemplate(id, type = 'template') {
-  return `/api/v1/knowledge/templates/${id}/download?type=${type}`
+  // 🔴 带鉴权下载（直链带不了 Authorization 头），见 utils/download.js
+  return downloadFile(`/api/v1/knowledge/templates/${id}/download?type=${type}`)
 }
 
 // Get categories

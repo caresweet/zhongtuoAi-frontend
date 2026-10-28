@@ -1,0 +1,140 @@
+/* ════════════════════════════════════════════════════════════════════
+   众拓AI · 企业深蓝 科技商务 设计系统
+   覆盖 Element Plus 主题变量 + 全局公共样式
+   ════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* 品牌主色（企业深蓝 + 青紫点缀） */
+  --el-color-primary: #2e5bff;
+  --el-color-primary-dark-2: #2951e5;
+  --el-color-primary-light-3: #6d8cff;
+  --el-color-primary-light-5: #96adff;
+  --el-color-primary-light-7: #c0ceff;
+  --el-color-primary-light-8: #d5deff;
+  --el-color-primary-light-9: #eaeeff;
+
+  --el-color-success: #18b879;
+  --el-color-success-light-3: #5ed3a6;
+  --el-color-success-light-5: #8fe2c0;
+  --el-color-success-light-7: #bcefdc;
+  --el-color-success-light-8: #d2f5e8;
+  --el-color-success-light-9: #e8faf3;
+
+  --el-color-warning: #f5a524;
+  --el-color-danger: #f0564a;
+
+  /* 圆角/阴影/背景 */
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --app-radius: 14px;
+  --app-radius-sm: 10px;
+  --app-shadow: 0 6px 24px rgba(20, 40, 100, 0.08);
+  --app-shadow-lg: 0 16px 48px rgba(20, 40, 120, 0.16);
+  --app-bg: #f4f6fb;
+  --app-bg-grad: linear-gradient(160deg, #eef2fb 0%, #f7f8fd 45%, #eef4ff 100%);
+
+  /* 侧边栏 深蓝科技 */
+  --app-sidebar-bg: linear-gradient(180deg, #0d1a3f 0%, #10224f 60%, #132a63 100%);
+  --app-sidebar-active: linear-gradient(90deg, #2e5bff 0%, #5a3cff 100%);
+  --app-sidebar-text: #a9b6d9;
+  --app-sidebar-active-text: #ffffff;
+  --app-sidebar-hover: rgba(255, 255, 255, 0.07);
+
+  /* 文字 */
+  --app-text-main: #18213a;
+  --app-text-sub: #6b7692;
+
+  /* Element Plus 基础变量统一 */
+  --el-font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --el-text-color-primary: #18213a;
+  --el-text-color-regular: #3c4760;
+  --el-text-color-secondary: #6b7692;
+  --el-border-color: #e4e9f2;
+  --el-border-color-light: #eef1f7;
+  --el-fill-color-blank: #ffffff;
+}
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--el-font-family);
+  color: var(--app-text-main);
+  background: var(--app-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── 通用布局/卡片工具类 ─────────────────────────────── */
+.app-page {
+  animation: appFadeIn 0.28s ease;
+}
+@keyframes appFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--app-text-main);
+  margin: 0 0 18px;
+}
+.page-title::before {
+  content: "";
+  width: 4px;
+  height: 18px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #2e5bff, #5a3cff);
+}
+
+.app-card {
+  background: #fff;
+  border-radius: var(--app-radius);
+  box-shadow: var(--app-shadow);
+  border: 1px solid rgba(46, 91, 255, 0.06);
+}
+
+/* ── Element Plus 全局润色 ───────────────────────────── */
+.el-card {
+  border-radius: var(--app-radius);
+  border-color: var(--el-border-color-light);
+}
+.el-card__header {
+  font-weight: 600;
+  color: var(--app-text-main);
+}
+.el-button {
+  font-weight: 500;
+}
+.el-dialog {
+  border-radius: 16px;
+}
+.el-tabs__item.is-active {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.el-tabs__active-bar {
+  background: linear-gradient(90deg, #2e5bff, #5a3cff);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(46, 91, 255, 0.22);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(46, 91, 255, 0.38); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* 桌面页统一容器 */
+.app-content {
+  max-width: 1440px;
+  margin: 0 auto;
+}

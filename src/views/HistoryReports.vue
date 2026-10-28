@@ -114,6 +114,7 @@ import { useHistoryStore } from '@/stores/history'
 import { downloadReport } from '@/api/history'
 import ReportTable from '@/components/history/ReportTable.vue'
 import ReportDetailDrawer from '@/components/history/ReportDetailDrawer.vue'
+import { authFetch } from '@/api/report'
 
 const store = useHistoryStore()
 const searchText = ref('')
@@ -167,7 +168,7 @@ async function submitExpertReview() {
   }
   expertSubmitting.value = true
   try {
-    const res = await fetch('/api/v1/reports/reviews/expert-feedback', {
+    const res = await authFetch('/api/v1/reports/reviews/expert-feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -216,14 +217,14 @@ async function onDeleteReport(report) {
   }
 }
 
-function onDownloadReport(report) {
-  const url = downloadReport(report.id)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = ''
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
+async function onDownloadReport(report) {
+  try {
+    // 🔴 downloadReport 现在**自己发起带鉴权的下载**（返回 Promise），
+    //    不能再把它当 URL 塞进 <a href> —— 直链带不了 Authorization 头。
+    await downloadReport(report.id)
+  } catch (e) {
+    ElMessage.error(e?.message || '下载失败')
+  }
 }
 </script>
 

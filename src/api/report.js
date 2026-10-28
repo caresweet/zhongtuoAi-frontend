@@ -1,9 +1,10 @@
 import client from './client'
 
-// ── Auth-aware fetch for SSE streams ─────────────────────────────────────
-// Raw fetch bypasses axios interceptors, so JWT injection + 401 redirect
-// must be handled manually for SSE endpoints.
-function _authFetch(url, options = {}) {
+// ── Auth-aware fetch（SSE 流 / 文件下载 等必须绕过 axios 的场景）──────────────
+// Raw fetch 不走 axios 拦截器，token 注入 + 401 跳登录都得手动来。
+// 🔴 **统一用这一个**，别在各 .vue 里各写一份 —— 之前散落 6 处裸 `fetch`，
+//    后端一开鉴权它们全部 401，而且没有任何一处会跳登录。
+export function authFetch(url, options = {}) {
   const token = localStorage.getItem('zhongtuo_token')
   const headers = {
     'Content-Type': 'application/json',
@@ -43,7 +44,10 @@ export function getChapters(sessionId) {
 // Upload a file attachment during report generation
 export function uploadAttachment(sessionId, file) {
   const formData = new FormData()
-  formData.append('file', file)
+  // 🔴 文件夹上传时必须把**相对路径**作为文件名一起发（第三个参数），
+  //    否则浏览器只发 basename，「公示照片4/微信图片_x.jpg」的文件夹线索全丢，
+  //    后端就判不出图片该进正文哪一章，最后只能全塞附件（正文一张图都没有）。
+  formData.append('file', file, file.webkitRelativePath || file.name)
   return client.post(`/reports/generate/${sessionId}/upload`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 300000,  // 5 min for large files
@@ -52,7 +56,7 @@ export function uploadAttachment(sessionId, file) {
 
 // Send chat message (returns SSE stream URL)
 export function sendChatMessage(sessionId, message, attachments, currentStep = null, folderStructure = null, signal = null, intent = '', domain = '') {
-  return _authFetch(`/api/v1/reports/generate/${sessionId}/chat`, {
+  return authFetch(`/api/v1/reports/generate/${sessionId}/chat`, {
     method: 'POST',
     body: JSON.stringify({ message, attachments, current_step: currentStep, folder_structure: folderStructure, intent: intent || '', domain: domain || intent || '' }),
     signal,  // 🔴 AbortSignal for cancelling SSE stream
@@ -61,7 +65,7 @@ export function sendChatMessage(sessionId, message, attachments, currentStep = n
 
 // Direct generation — no chat, upload files then call this
 export function generateReport(sessionId, signal) {
-  return _authFetch(`/api/v1/reports/generate/${sessionId}/generate`, {
+  return authFetch(`/api/v1/reports/generate/${sessionId}/generate`, {
     method: 'POST',
     signal,
   })
@@ -97,11 +101,15 @@ export function cancelGeneration(sessionId) {
 // ═══════════════════════════════════════════════════════
 
 // Start LangGraph workflow generation (returns immediately, runs in background)
-export function startWorkflow(sessionId, { materialsDir, projectContext, reportTitle } = {}) {
+export function startWorkflow(sessionId, { materialsDir, projectContext, reportTitle, selectedPersonnel, selectedCertPersonnel } = {}) {
   return client.post(`/reports/generate/${sessionId}/workflow/start`, {
     materials_dir: materialsDir || '',
     project_context: projectContext || '',
     report_title: reportTitle || '',
+    // 🔴 用户勾选的报告人员（前置工作组名单 + 培训证书取图）
+    selected_personnel: selectedPersonnel || [],
+    // 🔴 「选择证书」独立多选框（最多 3 人）→ 公司营业执照之后贴哪几张人员证书图
+    selected_cert_personnel: selectedCertPersonnel || [],
   }, { timeout: 10000 })  // 10s timeout — backend returns immediately
 }
 
@@ -135,6 +143,13 @@ export function triggerHumanRewrite(sessionId, chapters = []) {
 // Get material-analysis summary for a session
 export function getMaterialSummary(sessionId) {
   return client.get(`/reports/generate/${sessionId}/materials`)
+}
+
+// 缺口清单 —— 「这章缺什么、为什么缺」（含遁词检测）。
+// 🔴 生成结束后在界面上提示，**不写进交付稿**（业主 2026-10-10 口径：
+//    交付稿里不许有批注气球，缺口走这里告知）。
+export function getSessionGaps(sessionId) {
+  return client.get(`/reports/generate/${sessionId}/gaps`)
 }
 
 // Get T1-T4 quality report (test skill)
@@ -180,9 +195,8 @@ export function submitMissingData(sessionId, chapter, data) {
 
 // Trigger generation of a specific chapter (SSE stream)
 export function generateChapter(sessionId, chapter) {
-  return fetch(`/api/v1/reports/generate/${sessionId}/chapter/generate`, {
+  return authFetch(`/api/v1/reports/generate/${sessionId}/chapter/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chapter, domain: '' }),
   })
 }

@@ -2,15 +2,16 @@
   <div class="gen-layout">
     <!-- History Sidebar -->
     <aside class="sidebar" v-if="history.length">
-      <h3>📋 历史报告</h3>
+      <h3>📋 最近报告</h3>
       <div class="hist-list">
-        <div v-for="h in history" :key="h.id" class="hist-item">
+        <div v-for="h in visibleHistory" :key="h.id" class="hist-item">
           <div class="hist-title">{{ h.title || '未命名' }}</div>
           <div class="hist-meta">{{ h.time }} · {{ fmtSize(h.size) }}</div>
-          <a v-if="h.download_url" :href="h.download_url" class="hist-dl">📥 下载</a>
+          <a v-if="h.download_url" href="#" class="hist-dl" @click.prevent="dlHistory(h)">📥 下载</a>
           <span v-else class="hist-dl disabled">⏳</span>
         </div>
       </div>
+      <button class="hist-all" @click="goHistory">查看全部历史报告 →</button>
       <button class="hist-refresh" @click="loadHistory">🔄 刷新</button>
     </aside>
 
@@ -57,7 +58,7 @@
             <span class="dc-icon">📊</span>
             <span class="dc-title">社会稳定风险评估报告</span>
           </div>
-          <div :class="['dc-card', { sel: domain === 'bidding' }]" @click="domain = 'bidding'">
+          <div :class="['dc-card', { sel: domain === 'bidding' }]" @click="onBiddingClick">
             <span class="dc-icon">📋</span>
             <span class="dc-title">投标文件编写</span>
           </div>
@@ -125,9 +126,68 @@
         </div>
       </section>
 
-      <!-- ③ Generate + Cancel -->
+      <!-- ③ 选择报告人员（稳评）：决定前置「培训证书」页与「稳评工作组人员及分工情况」 -->
+      <section class="gs" v-if="domain === 'stability'">
+        <h2>③ 选择报告人员 <span class="up-stat">已选 {{ selectedPersonnel.length }} / {{ MAX_PERSONNEL }} 人</span></h2>
+        <p class="ghint pp-hint">
+          勾选的人员将写入报告前置的<b>稳评工作组人员及分工情况</b>。
+          <b>默认只列持「稳评培训证书」者</b>（库内 17 人，证书扫描件为证）；
+          名册上没证书的几位可取消勾选「只看持证人员」查看。
+          <b>最多 {{ MAX_PERSONNEL }} 人</b> —— 参照人工成品案卷为 6 人、洪泽/金湖模板为 6～7 人。
+        </p>
+        <div class="pp-tools">
+          <label class="pp-tool"><input type="checkbox" :checked="allSelected" @change="toggleAllPersonnel"> 全选</label>
+          <label class="pp-tool"><input type="checkbox" v-model="onlyCertPersonnel"> 只看持证人员</label>
+          <label class="pp-tool"><input type="checkbox" :checked="!onlyCertPersonnel"
+                                        @change="toggleNonCert"> 含未持证人员</label>
+          <button class="ubtn" @click="loadPersonnel" :disabled="personnelLoading">🔄 刷新名单</button>
+          <button class="ubtn" @click="buildCertIndex" :disabled="certBuilding">
+            {{ certBuilding ? '⏳ 识别中…' : '🔍 识别证书素材' }}
+          </button>
+          <button class="ubtn" @click="syncPersonnelStore" :disabled="certBuilding">📥 同步人员库</button>
+          <span class="pp-count">可见 {{ visiblePersonnel.length }} / 库内 {{ personnel.length }} 人</span>
+        </div>
+        <div class="pp-list" v-if="visiblePersonnel.length">
+          <label v-for="p in visiblePersonnel" :key="p.name"
+                 :class="['pp-item', { sel: selectedPersonnel.includes(p.name) }]">
+            <input type="checkbox" :checked="selectedPersonnel.includes(p.name)"
+                   @change="togglePersonnel(p.name)">
+            <span class="pp-name">{{ p.name }}</span>
+            <span class="pp-meta">{{ [p.gender, p.age ? p.age + '岁' : '', p.education, p.title].filter(Boolean).join(' · ') }}</span>
+            <span class="pp-role">{{ p.default_role }}</span>
+            <span v-if="p.has_wenshen_cert" class="pp-badge">稳评培训证书</span>
+            <span v-if="certCount(p)" class="pp-img" :title="certTitles(p)">🖼 {{ certCount(p) }}</span>
+          </label>
+        </div>
+        <p v-else class="ghint">
+          {{ personnelLoading ? '正在读取在职人员…' : '未读取到在职人员信息（请先在知识库维护「公司专业技术人员配备」）' }}
+        </p>
+      </section>
+
+      <!-- ④ 选择证书（稳评）：决定前置「公司资质证书」区贴哪几张人员证书图 -->
+      <section class="gs" v-if="domain === 'stability'">
+        <h2>④ 选择证书 <span class="up-stat">已选 {{ selectedCertPersonnel.length }} / {{ MAX_CERT_PERSONNEL }} 人</span></h2>
+        <p class="ghint pp-hint">
+          从<b>有证书扫描件的人</b>里挑，最多 <b>{{ MAX_CERT_PERSONNEL }} 人</b>；
+          这几张证书图贴在报告前置的 <b>公司营业执照之后</b>（「公司资质证书」区）。
+          与上面的工作组人员是两回事，互不影响。
+        </p>
+        <div class="pp-list" v-if="certCandidates.length">
+          <label v-for="p in certCandidates" :key="p.name"
+                 :class="['pp-item', { sel: selectedCertPersonnel.includes(p.name) }]">
+            <input type="checkbox" :checked="selectedCertPersonnel.includes(p.name)"
+                   @change="toggleCertPersonnel(p.name)">
+            <span class="pp-name">{{ p.name }}</span>
+            <span class="pp-meta">{{ [p.gender, p.title].filter(Boolean).join(' · ') }}</span>
+            <span class="pp-img" :title="certTitles(p)">🖼 {{ certCount(p) }}</span>
+          </label>
+        </div>
+        <p v-else class="ghint">还没有任何人员证书素材 —— 点上面的「🔍 识别证书素材」导入。</p>
+      </section>
+
+      <!-- ⑤ Generate + Cancel -->
       <section class="gs">
-        <h2>③ 开始生成</h2>
+        <h2>⑤ 开始生成</h2>
         <div class="gen-row">
           <button class="gbtn" :disabled="!canGenerate || isRunning" @click="startGenerate">
             {{ isRunning ? '⏳ 生成中...' : '🚀 开始生成报告' }}
@@ -146,8 +206,8 @@
           <span v-if="chInfo && phase !== 'complete'" class="ch-info">{{ chInfo }}</span>
         </h2>
         <div class="pbar-wrap">
-          <div class="pbar"><div class="pbar-fill" :style="{ width: pct + '%' }"></div></div>
-          <span class="pbar-pct">{{ pct }}%</span>
+          <div class="pbar"><div class="pbar-fill" :style="{ width: displayPct + '%' }"></div></div>
+          <span class="pbar-pct">{{ displayPct }}%</span>
         </div>
         <p class="pmsg">{{ statusMessage }}</p>
         <div v-if="steps.length" class="steps">
@@ -160,56 +220,131 @@
           <button class="dlbtn dlbtn-new" @click="resetAll">🔄 重新生成</button>
         </div>
         <div v-if="phase === 'complete' && downloadUrl" class="dl-wrap">
-          <a :href="downloadUrl" class="dlbtn" @click="onDownload">📥 下载报告 (.docx)</a>
+          <a href="#" class="dlbtn" @click.prevent="doDownload">📥 下载报告 (.docx)</a>
           <button class="dlbtn dlbtn-new" @click="resetAll">🔄 生成新报告</button>
         </div>
-        <!-- 🔴 缺失信息弹窗 -->
+        <!-- 缺口清单：只在这里提示，不写进交付稿 -->
+        <details v-if="phase === 'complete' && gaps && gaps.total" class="gap-panel">
+          <summary>⚠️ 本次生成有 <b>{{ gaps.total }}</b> 处「待补充 / 待核对」（{{ gaps.warnings || 0 }} 处需重点看）—— 点开看明细</summary>
+          <ul class="gap-list">
+            <li v-for="(g, i) in gaps.items" :key="i" :class="['gap-item', g.severity]">
+              <span class="gap-ch">第 {{ g.chapter }} 章</span>
+              <span class="gap-detail">{{ g.detail }}</span>
+              <span v-if="g.sentence" class="gap-sentence">原句：{{ g.sentence }}</span>
+            </li>
+          </ul>
+          <p class="gap-hint">这些是正文里用「以…为准」圆过去、或句内缺依据的地方，交稿前建议人工核对一遍。报告文件里不含这些提示。</p>
+        </details>
+        <!-- 🔴 缺失信息弹窗 —— **一次只问一项**
+             （业主：不要把整个章节的字段一次性铺出来；输入框要大，一眼看全；
+               字数限制要常驻备注，不能只在超限时才报错） -->
         <div v-if="reportStore.workflowPaused && missingFields.length" class="missing-modal">
-          <div class="missing-card">
-            <h3>⏸️ 需要补充以下信息</h3>
-            <p class="missing-hint">请填写后继续生成，或点击「跳过」使用默认值继续</p>
-            <div v-for="f in missingFields" :key="f.key" class="missing-field">
-              <label>{{ f.label }}</label>
-              <input v-model="missingForm[f.key]" :placeholder="'例如：' + (f.example || '')" />
+          <div class="missing-card missing-card-wide">
+            <h3>⏸️ 需要补充信息</h3>
+            <div class="missing-progress">
+              <span class="mp-count">第 <b>{{ curIdx + 1 }}</b> / {{ missingFields.length }} 项</span>
+              <span class="mp-where">{{ groupTitle(curField?.chapter) }}</span>
+              <div class="mp-bar">
+                <div class="mp-bar-fill"
+                     :style="{ width: Math.round((curIdx + 1) / missingFields.length * 100) + '%' }"></div>
+              </div>
+            </div>
+            <p class="missing-hint">
+              带 <span class="req">*</span> 的为必填；数字项只能填数字、手机号需 11 位。
+              填完点「下一项」，全部看完后点「提交并继续生成」（没填的按默认值处理）。
+            </p>
+            <div v-if="curField" class="missing-field missing-field-focus">
+              <label>
+                {{ curField.label }}<span class="req">*</span>
+                <span v-if="curField.maxlength" class="char-note">（不超过 {{ curField.maxlength }} 字）</span>
+              </label>
+              <!-- 🔴 长文本用大文本框：单行 input 看不全整段字，用户没法确认内容对不对 -->
+              <textarea
+                v-if="isLongTextField(curField)"
+                v-model="missingForm[curField.key]"
+                rows="6"
+                :maxlength="curField.maxlength || 500"
+                :placeholder="'例如：' + (curField.example || '')"
+                :class="{ 'input-error': missingErrors[curField.key] }"
+                @input="validateMissingField(curField)"
+              ></textarea>
+              <input
+                v-else
+                v-model="missingForm[curField.key]"
+                :type="curField.type === 'number' ? 'number' : (curField.type === 'phone' ? 'tel' : (curField.type === 'date' ? 'date' : 'text'))"
+                :inputmode="curField.type === 'number' ? 'decimal' : (curField.type === 'phone' ? 'numeric' : 'text')"
+                :maxlength="curField.type === 'date' ? undefined : (curField.maxlength || 100)"
+                :min="curField.type === 'date' ? dateMin(curField.key) : undefined"
+                :max="curField.type === 'date' ? dateMax(curField.key) : undefined"
+                :placeholder="curField.type === 'date' ? '' : ('例如：' + (curField.example || ''))"
+                :class="{ 'input-error': missingErrors[curField.key] }"
+                @input="validateMissingField(curField)"
+              />
+              <div v-if="missingErrors[curField.key]" class="field-error">{{ missingErrors[curField.key] }}</div>
+              <template v-else>
+                <!-- 🔴 「数据核对」弹窗专用：标出这个值是**谁给的**，
+                     用户才知道要看什么 —— 材料识别 / AI 提取 的值最需要人工确认 -->
+                <div v-if="curField.source" class="field-usage">来源：{{ curField.source }}</div>
+                <div v-if="curField.used_in" class="field-usage">用于 {{ curField.used_in }}</div>
+              </template>
             </div>
             <div class="missing-actions">
+              <button class="dlbtn dlbtn-new" :disabled="curIdx === 0" @click="curIdx--">← 上一项</button>
+              <button v-if="curIdx < missingFields.length - 1" class="dlbtn dlbtn-new" @click="nextMissing">下一项 →</button>
               <button class="dlbtn" @click="submitMissing">✅ 提交并继续生成</button>
               <button class="dlbtn dlbtn-new" @click="skipMissing">跳过（使用默认值）</button>
             </div>
           </div>
         </div>
-        <!-- 🔴 人工复核面板：Skill 审核发现问题且 AI 重试耗尽 → 需人工介入 -->
+        <!-- 🔴 人工复核面板 —— **一次只问一章**
+             （业主：不要把章节中的所有都放出来；输入框要大，一眼能看到整段字） -->
         <div v-if="pendingHumanChapters && humanQueue.length" class="missing-modal">
-          <div class="missing-card human-card">
-            <h3>👤 {{ humanQueue.length }} 个章节需人工复核</h3>
+          <div class="missing-card missing-card-wide">
+            <h3>👤 需要人工复核（{{ humanQueue.length }} 章）</h3>
+            <div class="missing-progress">
+              <span class="mp-count">第 <b>{{ humanIdx + 1 }}</b> / {{ humanQueue.length }} 章</span>
+              <span class="mp-where" v-if="curHuman">第{{ curHuman.chapter }}章 {{ curHuman.title }}</span>
+              <div class="mp-bar">
+                <div class="mp-bar-fill"
+                     :style="{ width: Math.round((humanIdx + 1) / humanQueue.length * 100) + '%' }"></div>
+              </div>
+            </div>
             <p class="missing-hint">
               AI 多次重写仍未能通过审核，或存在需人工确认的问题。
-              请选择处理方式：<b>给修改思路</b>（交给 AI 携意见重写）或 <b>直接审批放行</b>。
+              本章二选一：<b>给修改思路</b>（交给 AI 携意见重写）或 <b>直接审批放行</b>。
+              逐章处理完，再点最下方「继续生成」。
             </p>
-            <div v-for="ch in humanQueue" :key="ch.chapter" class="human-item">
+            <template v-if="curHuman">
               <div class="hr-head">
-                <strong>第{{ ch.chapter }}章 {{ ch.title }}</strong>
-                <span class="hr-status" :class="ch.status">{{ ch.status }}</span>
-                <span class="hr-retry" v-if="ch.retry_count">重试 {{ ch.retry_count }}/{{ ch.max_retry }}</span>
+                <strong>第{{ curHuman.chapter }}章 {{ curHuman.title }}</strong>
+                <span class="hr-status" :class="curHuman.status">{{ statusCn(curHuman.status) }}</span>
+                <span class="hr-retry" v-if="curHuman.retry_count">重试 {{ curHuman.retry_count }}/{{ curHuman.max_retry }}</span>
+                <span class="hr-retry" v-if="humanDone[curHuman.chapter]">已处理</span>
               </div>
-              <ul v-if="ch.violations && ch.violations.length" class="hr-violations">
-                <li v-for="(v, i) in ch.violations" :key="i">
-                  <span class="sev" :class="v.severity">{{ v.severity }}</span>
-                  <span class="disp" :class="v.disposition">{{ v.disposition }}</span>
+              <ul v-if="curHuman.violations && curHuman.violations.length" class="hr-violations">
+                <li v-for="(v, i) in curHuman.violations" :key="i">
+                  <span class="sev" :class="v.severity">{{ sevCn(v.severity) }}</span>
+                  <span class="disp" :class="v.disposition">{{ dispCn(v.disposition) }}</span>
                   {{ v.message }}
                 </li>
               </ul>
               <div class="hr-actions">
-                <textarea v-model="humanOpinionForm[ch.chapter]" class="hr-opinion"
+                <!-- 🔴 大字输入框：修改思路往往是一整段话，2 行根本看不全 -->
+                <textarea v-model="humanOpinionForm[curHuman.chapter]" class="hr-opinion"
                   placeholder="输入您的修改思路，AI 将携带该意见重写本章（例如：支持率应为100%，删除反对表述）"
-                  :disabled="humanDone[ch.chapter]" rows="2"></textarea>
+                  :disabled="humanDone[curHuman.chapter]" rows="8"></textarea>
                 <div class="hr-btns">
-                  <button class="dlbtn" :disabled="humanDone[ch.chapter] || humanBusy[ch.chapter]"
-                    @click="submitHumanOpinion(ch.chapter)">✍️ 提交意见并AI重写</button>
-                  <button class="dlbtn dlbtn-new" :disabled="humanDone[ch.chapter] || humanBusy[ch.chapter]"
-                    @click="approveHumanChapter(ch.chapter)">✅ 审批通过（跳过AI重写）</button>
+                  <button class="dlbtn" :disabled="humanDone[curHuman.chapter] || humanBusy[curHuman.chapter]"
+                    @click="submitHumanOpinion(curHuman.chapter)">✍️ 提交意见并AI重写</button>
+                  <button class="dlbtn dlbtn-new" :disabled="humanDone[curHuman.chapter] || humanBusy[curHuman.chapter]"
+                    @click="approveHumanChapter(curHuman.chapter)">✅ 审批通过（跳过AI重写）</button>
                 </div>
               </div>
+            </template>
+            <div class="missing-actions">
+              <button class="dlbtn dlbtn-new" :disabled="humanIdx === 0" @click="humanIdx--">← 上一章</button>
+              <button class="dlbtn dlbtn-new" :disabled="humanIdx >= humanQueue.length - 1"
+                @click="humanIdx++">下一章 →</button>
             </div>
             <div class="hr-global">
               <button class="dlbtn" :disabled="humanProcessing" @click="triggerHumanRewrite">
@@ -220,8 +355,11 @@
           </div>
         </div>
         <!-- 实时日志 -->
-        <div v-if="showProgress && workflowLogs.length" class="log-panel">
-          <div class="log-header">📋 运行日志</div>
+        <!-- 🔴 运行日志**只给内部人员看**（业主：「上线不给用户看运行日志」）。
+             后端也会对非内部人员返回空的 `logs`（见 report.py 的 workflow/status）——
+             这里只是别让面板空占位置。出问题的排查看 logs/backend.log。 -->
+        <div v-if="showProgress && workflowLogs.length && authStore.isStaff" class="log-panel">
+          <div class="log-header">📋 运行日志（仅内部可见）</div>
           <div class="log-body" ref="logBody">
             <div v-for="(log, i) in workflowLogs" :key="i" class="log-line" :class="{ 'log-done': log.includes('✅'), 'log-running': log.includes('...') || log.includes('正在') }">{{ log }}</div>
           </div>
@@ -233,10 +371,15 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useReportStore } from '@/stores/report'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { authFetch, getSessionGaps } from '@/api/report'
+import { downloadFile } from '@/utils/download'
 
 const reportStore = useReportStore()
+const authStore = useAuthStore()
 
 const domain = ref('stability')
 const files = ref([])
@@ -246,6 +389,9 @@ const intentResult = ref(null)
 // 🔴 人工复核状态（Skill 审核发现问题、AI 重试耗尽后由前端介入）
 const pendingHumanChapters = ref(false)   // 是否处于人工复核暂停
 const humanQueue = ref([])                // 待复核章节 [{chapter,title,status,violations,...}]
+// 🔴 人工复核**一次只问一章**（业主：不要把章节中的所有都放出来）
+const humanIdx = ref(0)
+const curHuman = computed(() => humanQueue.value[humanIdx.value] || null)
 const humanOpinionForm = reactive({})     // chapter -> 人工意见文本
 const humanDone = reactive({})            // chapter -> 已处理标记
 const humanBusy = reactive({})            // chapter -> 提交中
@@ -254,7 +400,7 @@ const humanProcessing = ref(false)        // 触发重写/继续生成中
 async function analyzeIntent() {
   if (!userInput.value.trim()) return
   try {
-    const res = await fetch('/api/v1/reports/analyze-intent', {
+    const res = await authFetch('/api/v1/reports/analyze-intent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_input: userInput.value }),
@@ -270,34 +416,309 @@ async function analyzeIntent() {
   }
 }
 const showProgress = ref(false)
+
+// 🔴 投标文件模块尚未开放 —— 点卡片只弹提示，不切换报告类型
+function onBiddingClick() {
+  domain.value = 'stability'
+  ElMessageBox.alert(
+    '📋 投标文件编写功能正在开发中，暂未开放。\n\n'
+    + '目前已支持《社会稳定风险评估报告》全流程智能生成，可直接开始；'
+    + '投标文件模块上线后会在首页第一时间通知您。',
+    '功能开发中',
+    { confirmButtonText: '知道了', type: 'info' },
+  ).catch(() => {})
+}
 const uploading = ref(false)
 const uploadTotal = ref(0)
 const uploadDone = ref(0)
 const history = reactive([])
+// 🔴 左侧只展示最近 5 条，避免整列滚动条
+const visibleHistory = computed(() => history.slice(0, 5))
+const router = useRouter()
+function goHistory() { router.push('/app/history') }
 const workflowLogs = ref([])
+// 缺口清单（生成完成后提示「这章缺什么」）—— 不写进交付稿
+const gaps = ref(null)
 const logBody = ref(null)
 const missingFields = ref([])
 const missingForm = reactive({})
+const missingErrors = reactive({})
 
+// 🔴 **一次只问一项**（业主：不要把整个章节的字段一次性铺出来）。
+//    `curIdx` 是当前项的游标；每来一批新的 `missing_fields` 就归零。
+const curIdx = ref(0)
+const curField = computed(() => missingFields.value[curIdx.value] || null)
+
+// 🔴 长文本用大文本框（单行 input 看不全整段字，用户没法确认内容对不对）。
+//    判据：文本类 + （字数上限较大 或 已有较长的 AI 草稿）。
+function isLongTextField(f) {
+  if (!f) return false
+  if (f.type && f.type !== 'text') return false
+  return (f.maxlength || 0) > 30 || String(f.current || '').length > 30
+}
+
+// 「下一项」：先校验当前项，不过就停在原地（避免用户带着错值一路点到底）
+function nextMissing() {
+  const f = curField.value
+  if (f) {
+    validateMissingField(f)
+    if (missingErrors[f.key]) { ElMessage.warning('请先修正该项'); return }
+  }
+  if (curIdx.value < missingFields.value.length - 1) curIdx.value++
+}
+
+function groupTitle(ch) {
+  const n = Number(ch)
+  return (ch !== '' && Number.isFinite(n) && n > 0) ? `第${cnNum(n)}章` : String(ch)
+}
+function cnNum(n) {
+  const cn = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+  return cn[n] || n
+}
+// 🔴 逐项校验：数字项限数字、手机号走正则、文字项限长度/禁纯数字
+function validateMissingField(f) {
+  const v = String(missingForm[f.key] ?? '').trim()
+  missingErrors[f.key] = ''
+  if (!v) return
+  if (f.type === 'date') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { missingErrors[f.key] = '请选择日期'; return }
+    // 🔴 结束时间不能早于开始时间（浏览器 min/max 拦得住选择器，拦不住手输）
+    const _ord = checkDateOrder(f.key, v)
+    if (_ord) missingErrors[f.key] = _ord
+    return
+  }
+  if (f.maxlength && v.length > f.maxlength) { missingErrors[f.key] = `不超过 ${f.maxlength} 字`; return }
+  if (f.type === 'number') {
+    const ok = f.pattern ? new RegExp(f.pattern).test(v) : !isNaN(Number(v))
+    if (!ok) missingErrors[f.key] = '只能填写数字'
+  } else if (f.type === 'phone') {
+    if (f.pattern ? !new RegExp(f.pattern).test(v) : !/^1[3-9]\d{9}$/.test(v)) missingErrors[f.key] = '电话格式不正确（手机 11 位 1 开头，或座机如 0517-12345678）'
+  } else {
+    if (/^\d+$/.test(v)) missingErrors[f.key] = '该项应填写文字，不是数字'
+  }
+}
 async function submitMissing() {
+  let bad = false
+  for (const f of missingFields.value) { validateMissingField(f); if (missingErrors[f.key]) bad = true }
+  if (bad) { ElMessage.warning('请修正标红的字段'); return }
   const data = {}
   for (const f of missingFields.value) {
-    if (missingForm[f.key]) data[f.key] = missingForm[f.key]
+    const v = String(missingForm[f.key] ?? '').trim()
+    if (v) data[f.key] = v
   }
   if (!Object.keys(data).length) { ElMessage.warning('请至少填写一项'); return }
   missingFields.value = []
+  Object.keys(missingErrors).forEach(k => delete missingErrors[k])
   await reportStore.resumeWorkflow(data)
   // 🔴 Restart log polling — resumeWorkflow restarts workflow polling, but not log collection
   _collectLogs()
 }
 function skipMissing() {
   missingFields.value = []
-  reportStore.resumeWorkflow({})
+  Object.keys(missingErrors).forEach(k => delete missingErrors[k])
+  // 🔴 **不能送空对象 `{}`** —— LangGraph 把 `Command(resume={})` 当成「没有恢复值」，
+  //    于是 resume 时 `interrupt()` **再次抛出**，节点永远走不到中断之后的代码，
+  //    **同一个弹窗无限重弹**（离线最小复现：resume={} ❌ 死循环；resume={'x':1} ✅）。
+  //    送一个哨兵，后端会忽略它（`_` 开头的键不进事实卡），但 LangGraph 能正确恢复。
+  //    ⚠️ 值必须是**字符串**：接口 schema 是 `Dict[str, Any]`，但历史上写成
+  //    `Dict[str, str]` 时布尔 `true` 会被 pydantic 在进函数体前直接 422
+  //    ——「一按跳过就报错」就是这么来的。用 `'1'` 两边都不会踩。
+  reportStore.resumeWorkflow({ __skip__: '1' })
   _collectLogs()
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ③ 选择报告人员 —— 决定前置「培训证书」页与「稳评工作组人员及分工情况」
+//    数据源：GET /api/v1/company/personnel（**本公司**的人员库）
+// ═══════════════════════════════════════════════════════════════
+const personnel = ref([])
+const personnelLoading = ref(false)
+const selectedPersonnel = ref([])
+const onlyCertPersonnel = ref(true)
+// 🔴 默认**只看持证人员** —— 库里有 17 人持稳评培训证书（证书扫描件为证），
+//    这才是可选人员的正常范围；名册（投标文件旧快照，仅 8 人）不该当过滤条件，
+//    否则会把 14 个持证的人藏起来（业主：「持证人员可选择的太少」）。
+//    想看名册上没证书的那几位，取消勾选「只看持证人员」即可。
+function toggleNonCert(e) { onlyCertPersonnel.value = !e.target.checked }
+
+const visiblePersonnel = computed(() =>
+  onlyCertPersonnel.value ? personnel.value.filter(p => p.has_wenshen_cert) : personnel.value)
+const allSelected = computed(() =>
+  visiblePersonnel.value.length > 0 && visiblePersonnel.value.every(p => selectedPersonnel.value.includes(p.name)))
+
+async function loadPersonnel() {
+  personnelLoading.value = true
+  try {
+    const res = await authFetch('/api/v1/company/personnel')
+    const data = await res.json()
+    const list = (data && data.data && data.data.personnel) || []
+    if (!list.length) ElMessage.warning('人员库为空，请点「同步人员库」从名册与素材图导入')
+    personnel.value = list
+    // 🔴 默认勾选持稳评培训证书者，但**不超过 MAX_PERSONNEL 人** ——
+    //    库里持证者常有十几位，全勾进去就偏离参照件体例了（6～7 人）。
+    const certs = list.filter(p => p.has_wenshen_cert).map(p => p.name)
+    selectedPersonnel.value = (certs.length ? certs : list.map(p => p.name)).slice(0, MAX_PERSONNEL)
+    // 🔴 证书候选 = 有证书扫描件的人；优先默认勾「工作组里也有证书的」，最多 MAX_CERT_PERSONNEL
+    const withCert = list.filter(p => (p.cert_image_count || 0) > 0).map(p => p.name)
+    const prefer = selectedPersonnel.value.filter(n => withCert.includes(n))
+    selectedCertPersonnel.value = (prefer.length ? prefer : withCert).slice(0, MAX_CERT_PERSONNEL)
+  } catch (e) {
+    ElMessage.error('读取在职人员失败：' + e.message)
+  } finally {
+    personnelLoading.value = false
+  }
+}
+// 某人可用的证书图片（来自人员库 company_personnel_images）
+function certCount(p) { return p.cert_image_count || 0 }
+function certTitles(p) { return (p.cert_images || []).join('\n') }
+
+// 证书扫描件的姓名是手写体，文件名看不出是谁 —— 由后端一次性视觉识别并落盘
+const certBuilding = ref(false)
+
+// 从名册 + 素材图重建人员库（company_personnel / company_personnel_images 两张表）
+async function syncPersonnelStore() {
+  try {
+    const fd = new FormData()
+    const res = await authFetch('/api/v1/company/personnel/sync', { method: 'POST', body: fd })
+    const data = await res.json()
+    if (!res.ok) { ElMessage.error(data.detail || '同步失败'); return }
+    ElMessage.success(data.message || '人员库已同步')
+  } catch (e) {
+    ElMessage.error('同步人员库失败：' + e.message)
+  }
+}
+async function buildCertIndex() {
+  // 🔴 证书扫描件的视觉识别扫的是**我们的素材目录**，属内部工具，
+  //    后端已把 `/api/v1/knowledge/personnel/certs*` 设为管理员专属。
+  //    普通用户用自己的「上传证书」（/api/v1/company/personnel/{id}/certs）。
+  if (!authStore.isStaff) {
+    ElMessage.warning('证书识别仅内部人员可用；请用「上传证书」')
+    return
+  }
+  certBuilding.value = true
+  try {
+    const fd = new FormData()
+    const res = await authFetch('/api/v1/knowledge/personnel/certs/build', { method: 'POST', body: fd })
+    const data = await res.json()
+    ElMessage.success(data.message || '已开始识别')
+    // 轮询直到完成，再重建人员库并刷新名单上的证书数
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 5000))
+      const st = await (await authFetch('/api/v1/knowledge/personnel/certs')).json()
+      const job = (st.data && st.data.job) || {}
+      if (job.status === 'done') { ElMessage.success(`✅ 证书识别完成（${job.done} 张）`); break }
+      if (job.status === 'error') { ElMessage.error('证书识别失败：' + (job.error || '')); break }
+    }
+    await syncPersonnelStore()
+    await loadPersonnel()
+  } catch (e) {
+    ElMessage.error('证书识别失败：' + e.message)
+  } finally {
+    certBuilding.value = false
+  }
+}
+
+// 🔴 稳评工作组人数上限 —— 按参照件实测定的：
+//   人工成品案卷（洪泽）6 人、洪泽稳评模板 7 人、金湖稳评模板 6 人、白马湖2号 6 人。
+//   角色结构固定：1 负责人 + 2～4 调研 + 2 风险研判 + 1～2 数据汇总 + 1 资料档案。
+const MAX_PERSONNEL = 7
+
+function togglePersonnel(name) {
+  const i = selectedPersonnel.value.indexOf(name)
+  if (i >= 0) { selectedPersonnel.value.splice(i, 1); return }
+  if (selectedPersonnel.value.length >= MAX_PERSONNEL) {
+    ElMessage.warning(`稳评工作组一般不超过 ${MAX_PERSONNEL} 人（参照件为 6～7 人），请先取消一位`)
+    return
+  }
+  selectedPersonnel.value.push(name)
+}
+
+function toggleAllPersonnel(e) {
+  if (!e.target.checked) { selectedPersonnel.value = []; return }
+  const all = visiblePersonnel.value.map(p => p.name)
+  selectedPersonnel.value = all.slice(0, MAX_PERSONNEL)
+  if (all.length > MAX_PERSONNEL) {
+    ElMessage.info(`已选前 ${MAX_PERSONNEL} 人（上限），其余请逐位替换`)
+  }
+}
+
+// 🔴 「选择证书」——与工作组**分开**的另一个多选框（业主口径：最多 3 人）。
+//    只列**有证书扫描件的人**；这几张证书图贴在报告前置「公司营业执照之后」。
+const MAX_CERT_PERSONNEL = 3
+const selectedCertPersonnel = ref([])
+const certCandidates = computed(() =>
+  personnel.value.filter(p => (p.cert_image_count || 0) > 0))
+
+function toggleCertPersonnel(name) {
+  const i = selectedCertPersonnel.value.indexOf(name)
+  if (i >= 0) { selectedCertPersonnel.value.splice(i, 1); return }
+  if (selectedCertPersonnel.value.length >= MAX_CERT_PERSONNEL) {
+    ElMessage.warning(`证书最多选 ${MAX_CERT_PERSONNEL} 人（对应营业执照后贴几张证书图），请先取消一位`)
+    return
+  }
+  selectedCertPersonnel.value.push(name)
 }
 
 const isRunning = computed(() => reportStore.isStreaming || reportStore.phase === 'generating' || reportStore.workflowPaused)
 const phase = computed(() => reportStore.phase)
+// 🔴 日期区间约束：**只约束有关联的日期对**，互不相关的日期互不限制。
+//    （业主 2026-09-28：「有几个日期是互不相关的就不要相互限制，只针对有关联的日期限制。」）
+//    原来把 11 个日期串成一条大链（委托→方案→勘察→座谈→编制→评审→审核）强制全局排序，
+//    连字段样例自己都违反（方案审核样例 06-03 早于评审结束样例 06-15，链却要求审核更晚），
+//    用户照真实项目填合法日期会被误拦。现在只留两类：
+//      ① 同一活动的 开始/结束 对（结束不得早于开始）；
+//      ② 有明确因果关系的相邻对。
+const DATE_RANGES = [
+  // ① 同一活动起止
+  ['notice_date', 'notice_end_date'],                    // 现场公示
+  ['risk_predict_date', 'risk_predict_end_date'],        // 风险预测
+  ['report_draft_date', 'report_draft_end_date'],        // 报告编制
+  ['review_date', 'review_end_date'],                    // 专家评审
+  ['publicity_start_date', 'publicity_end_date'],        // 稳评公示
+  // ② 有因果关系的相邻对
+  ['commission_date', 'plan_date'],                      // 先委托，后制定方案
+  ['plan_date', 'plan_approve_date'],                    // 先制定方案，后方案审核
+  ['notice_publish_date', 'notice_date'],                // 公告发布在前，现场公示在后
+]
+// 弹窗里展示中文字段名（业主：不要给用户看英文字段）
+const fieldLabel = (key) =>
+  missingFields.value.find(f => f.key === key)?.label || key
+const dateMin = (key) => {
+  const p = DATE_RANGES.find(([, e]) => e === key)
+  return p ? (missingForm[p[0]] || undefined) : undefined
+}
+const dateMax = (key) => {
+  const p = DATE_RANGES.find(([s]) => s === key)
+  return p ? (missingForm[p[1]] || undefined) : undefined
+}
+/** 提交前的跨字段校验：返回错误信息，或空串。 */
+function checkDateOrder(key, val) {
+  if (!val) return ''
+  const lo = DATE_RANGES.find(([, e]) => e === key)
+  if (lo && missingForm[lo[0]] && String(val) < String(missingForm[lo[0]])) {
+    return `不能早于「${fieldLabel(lo[0])}」填的 ${missingForm[lo[0]]}`
+  }
+  const hi = DATE_RANGES.find(([s]) => s === key)
+  if (hi && missingForm[hi[1]] && String(val) > String(missingForm[hi[1]])) {
+    return `不能晚于「${fieldLabel(hi[1])}」填的 ${missingForm[hi[1]]}`
+  }
+  return ''
+}
+
+
+//    直接印出来业主看不懂（业主：「弹窗的消息可以用中国标题么不要用英文字段」）。
+//    取值见 `app/validation/audit_dispatcher.py:classify_issue` 与
+//    `audit_result` 的 severity 字段。
+const SEVERITY_CN = { critical: '严重', error: '错误', warning: '警告', warn: '警告', info: '提示' }
+const DISPOSITION_CN = {
+  ai_rewrite: 'AI 重写', human: '需人工处理', auto_fix: '自动修复',
+  warning: '提示', regenerate: '重新生成', manual_fix: '人工修改',
+}
+const STATUS_CN = { queued: '待处理', approved: '已通过', rewritten: '已重写', pending: '待处理' }
+const sevCn = (v) => SEVERITY_CN[v] || '提示'
+const dispCn = (v) => DISPOSITION_CN[v] || '待处理'
+const statusCn = (v) => STATUS_CN[v] || '待处理'
+
 const downloadUrl = computed(() => reportStore.downloadUrl)
 const statusMessage = computed(() => reportStore.statusMessage || '准备中...')
 
@@ -323,16 +744,40 @@ const pct = computed(() => {
     }
   }
 
-  // Post-generation: 85%-100%
-  if (qualityStep && qualityStep.done) base = Math.max(base, 92)
-  if (assemblyStep && assemblyStep.done) base = Math.max(base, 100)
+  // 组装阶段走到 99% 为止 —— **100% 只留给「报告真的能下载」那一刻**。
+  if (assemblyStep && assemblyStep.done) base = Math.max(base, 99)
 
-  const v = Math.min(base, 100)
+  const v = Math.min(base, 99)
   if (v > _maxPct) _maxPct = v
-  // Snap to 100 when assembly is done or phase is complete
-  if (assemblyStep && assemblyStep.done) _maxPct = 100
-  if (reportStore.phase === 'complete') _maxPct = 100
+  const _paused = reportStore.workflowPaused
+  // 🔴 **唯一的 100%**：后端已经给出可下载的产物地址（且文件确实存在）。
+  //    以前这里用 `assembly.done` / `phase === 'complete'` 直接给 100%，
+  //    而后端可能因为**上一轮遗留的 output_path** 把 assembly 误报成 done ——
+  //    于是「待补充信息」弹窗还没填完，进度条就满了（业主反馈的现象）。
+  //    只认「下载链接已就绪」这一个事实，前端就不再被后端的状态派生错误带偏。
+  if (reportStore.downloadUrl && !_paused) _maxPct = 100
+  if (_paused && _maxPct > 99) _maxPct = 99
   return _maxPct
+})
+
+// 🔴 进度条按 1% 平滑递增：实际进度 pct 作为目标，displayPct 每 tick +1% 追进，
+//    避免按章节一次跳 7.5% 的"跳变感"
+const displayPct = ref(0)
+let _pctTimer = null
+function _startPctClimb() {
+  if (_pctTimer) return
+  _pctTimer = setInterval(() => {
+    const target = pct.value
+    if (displayPct.value >= target) {
+      clearInterval(_pctTimer); _pctTimer = null
+      return
+    }
+    displayPct.value += 1   // 每次精确 +1%
+  }, 300)                    // 每 300ms 加 1%，总生成期约平滑爬升
+}
+watch(pct, _startPctClimb)
+watch(() => reportStore.phase, (p) => {
+  if (p === 'complete') { _startPctClimb() }
 })
 const chInfo = computed(() => {
   const ch = reportStore.currentChapter
@@ -346,6 +791,7 @@ const canGenerate = computed(() => files.value.length > 0)
 let _downloadTimer = null
 onMounted(() => {
   loadHistory()
+  loadPersonnel()               // ③ 在职人员名单（默认勾选持稳评培训证书者）
   // 🔴 页面刷新/关闭时取消正在运行的工作流
   window.addEventListener('beforeunload', _onUnload)
 })
@@ -362,13 +808,13 @@ async function _onUnload() {
   if (reportStore.workflowRunning && reportStore.sessionId) {
     // Send cancel signal (fire-and-forget, don't block page unload)
     try {
-      await fetch(`/api/v1/reports/generate/${reportStore.sessionId}/cancel`, { method: 'POST' })
+      await authFetch(`/api/v1/reports/generate/${reportStore.sessionId}/cancel`, { method: 'POST' })
     } catch {}  // Ignore network errors on cancel
   }
 }
 async function loadHistory() {
   try {
-    const r = await fetch('/api/v1/history/reports?page=1&page_size=20')
+    const r = await authFetch('/api/v1/history/reports?page=1&page_size=20')
     const d = await r.json()
     const items = d.data?.items || d.data || []
     history.splice(0, history.length, ...items.map(i => ({
@@ -382,14 +828,19 @@ async function loadHistory() {
 }
 
 // ── Watch: complete → auto download ──
-watch(() => reportStore.phase, (p) => {
+// 🔴 不能用 <a href> 直链：浏览器直链不带 Authorization 头，/api/v1/files/* 会 401。
+//    必须走 downloadFile()（authFetch 拿 blob 再落盘），见 utils/download.js。
+watch(() => reportStore.phase, async (p) => {
   if (p === 'complete') {
     const url = reportStore.downloadUrl
     if (url) {
-      _downloadTimer = setTimeout(() => {
-        const a = document.createElement('a')
-        a.href = url; a.download = ''
-        document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      _downloadTimer = setTimeout(async () => {
+        try {
+          await downloadFile(url)
+        } catch (e) {
+          console.error('[DL] 自动下载失败:', e)
+          ElMessage.error('自动下载失败，请点「下载报告」按钮重试')
+        }
         _downloadTimer = null
       }, 300)
     }
@@ -397,6 +848,20 @@ watch(() => reportStore.phase, (p) => {
     _maxPct = 0
     loadHistory()
     ElMessage.success('报告生成完成！')
+    // 🔴 缺口清单在这里提示，**不写进交付稿**（业主口径）。
+    //    以前是写成 Word 批注挂在章节上，交付稿里带一批批注气球。
+    try {
+      const res = await getSessionGaps(reportStore.sessionId)
+      gaps.value = res?.data || null
+      if (gaps.value?.total) {
+        ElNotification({
+          title: '报告已生成，有几处建议人工核对',
+          message: `共 ${gaps.value.total} 处「待补充 / 待核对」，其中 ${gaps.value.warnings || 0} 处需重点看 —— 展开下方清单可查看逐条明细`,
+          type: 'warning',
+          duration: 9000,
+        })
+      }
+    } catch (e) { console.warn('[GAPS] 缺口清单获取失败:', e) }
   }
 })
 
@@ -406,7 +871,7 @@ const currentMaterial = ref('')
 function clickFile() {
   const inp = document.createElement('input')
   inp.type = 'file'; inp.multiple = true
-  inp.accept = '.png,.jpg,.jpeg,.gif,.webp,.pdf,.docx,.doc,.xlsx,.xls,.csv,.txt'
+  inp.accept = '.png,.jpg,.jpeg,.gif,.webp,.pdf,.docx,.doc,.xlsx,.xls,.csv,.txt,.dwg,.dxf'
   inp.onchange = (e) => { onFiles(e); inp.remove() }
   inp.click()
 }
@@ -454,6 +919,40 @@ async function addFiles(fileList) {
   }
   uploading.value = false
   console.log(`[UPLOAD] 完成 ${uploadDone.value}/${uploadTotal.value}`)
+  checkRecognition()
+}
+
+// 🔴 上传后立即核验「材料里到底认到了什么、还缺什么」。
+//    日志面板只对内部人员可见（v-if 里带 isStaff），外部用户此前**看不到任何识别结果**，
+//    少传/传错只能等生成到一半被弹窗追问。这里给所有人都回一份明确清单。
+async function checkRecognition() {
+  if (!reportStore.sessionId) return
+  try {
+    // 材料解析在后台跑（indexing），稍等再查，避免查到空
+    await new Promise(r => setTimeout(r, 2500))
+    const resp = await authFetch(`/api/v1/reports/generate/${reportStore.sessionId}/recognition`)
+    const d = (await resp.json())?.data
+    if (!d || !d.total) return
+    const ok = d.recognized || []
+    const miss = d.missing || []
+    const okLine = ok.length
+      ? `<div style="margin-top:4px"><b>✅ 已识别 ${ok.length}/${d.total}</b>：`
+        + ok.map(i => `${i.label}（${i.value}）`).join('、') + '</div>'
+      : ''
+    const missLine = miss.length
+      ? `<div style="margin-top:6px;color:#b45309"><b>⚠️ 材料中未识别 ${miss.length} 项</b>：`
+        + miss.map(i => i.label).join('、')
+        + '<br><span style="color:#666">生成过程中会逐项询问，也可现在补传材料</span></div>'
+      : '<div style="margin-top:6px;color:#15803d"><b>✅ 关键信息已全部识别</b></div>'
+    ElNotification({
+      title: '材料识别结果',
+      dangerouslyUseHTMLString: true,
+      duration: miss.length ? 0 : 6000,
+      message: okLine + missLine,
+    })
+  } catch (e) {
+    console.warn('[RECOGNITION] 核验失败（不影响上传）:', e?.message || e)
+  }
 }
 
 // ── Generate / Cancel ──
@@ -468,7 +967,7 @@ async function startGenerate() {
     }
     // 🔴 Use LangGraph workflow for generation (with progress bar)
     console.log('[GENERATE] 启动工作流, session:', reportStore.sessionId)
-    await reportStore.generateWithWorkflow()
+    await reportStore.generateWithWorkflow('', selectedPersonnel.value, selectedCertPersonnel.value)
     console.log('[GENERATE] 工作流已启动, 开始轮询日志')
     // Start collecting logs via polling
     _collectLogs()
@@ -509,8 +1008,11 @@ function _collectLogs() {
         const ss = data.step_statuses
         for (const s of (reportStore.progressSteps || [])) {
           const st = ss[s.key]
-          if (st === 'done') { s.done = true; s.active = false }
-          else if (st === 'running') { s.active = true }
+          // 🔴 **两种状态都要显式写**：原来只置 `done = true`、从不置回 false，
+          //    于是上一轮跑完后每一步都永久停在「已完成」——
+          //    同一会话再生成一次时，步骤条一上来就是全绿（进度条跟着虚高）。
+          s.done = (st === 'done')
+          s.active = (st === 'running')
         }
       }
       if (data.logs && data.logs.length > workflowLogs.value.length) {
@@ -533,6 +1035,7 @@ function _collectLogs() {
           const { getHumanQueue } = await import('@/api/report')
           const hq = await getHumanQueue(reportStore.sessionId)
           humanQueue.value = (hq.data?.chapters) || []
+          humanIdx.value = 0   // 新队列 → 从第一章开始逐章问
           // 回填已提交过的意见/审批状态
           for (const c of humanQueue.value) {
             if (c.human_opinion) humanOpinionForm[c.chapter] = c.human_opinion
@@ -543,11 +1046,21 @@ function _collectLogs() {
       if (data.phase === 'paused') {
         console.log('[POLL] 暂停:', data.missing_fields?.length, '个缺失字段')
         missingFields.value = data.missing_fields || []
+        // 🔴 新一批 → 逐条游标归零（否则会停在上批的索引上，指向不存在的项）
+        curIdx.value = 0
         // 🔴 Also update store so template fallback works
         reportStore.workflowMissingFields = data.missing_fields || []
         reportStore.workflowPaused = true
         if (data.missing_fields?.length) {
-          for (const f of data.missing_fields) { missingForm[f.key] = '' }
+          // 🔴 预填**解析出来的当前值**：这批字段是「数据核对」弹窗送来的
+          //    （后端 `node_data_inquiry` 会带 `current` + `source`），
+          //    目的是让用户核对「材料里认出来的/系统校验的」对不对 ——
+          //    输入框空着的话用户根本看不到要核对什么。
+          //    缺字段弹窗（`missing_data`）不带 `current`，行为与以前一致（空框）。
+          //    ⚠️ 只在**还没填过**时预填，别把用户已经输入的内容冲掉。
+          for (const f of data.missing_fields) {
+            if (missingForm[f.key] === undefined) missingForm[f.key] = f.current ?? ''
+          }
         }
         clearInterval(_logTimer)
       }
@@ -556,6 +1069,26 @@ function _collectLogs() {
 }
 
 function onDownload() { setTimeout(() => { showProgress.value = false }, 1000) }
+
+// 🔴 带鉴权下载（直链 <a href> 不带 Authorization，/api/v1/files/* 会 401）
+async function doDownload() {
+  const url = reportStore.downloadUrl
+  if (!url) return
+  try {
+    await downloadFile(url)
+  } catch (e) {
+    ElMessage.error(e?.message || '下载失败')
+  }
+}
+async function dlHistory(h) {
+  if (!h.download_url) return
+  try {
+    await downloadFile(h.download_url)
+  } catch (e) {
+    ElMessage.error(e?.message || '下载失败')
+  }
+}
+
 // 🔴 人工复核：提交修改思路 → 交给 AI 携意见重写本章
 async function submitHumanOpinion(ch) {
   const opinion = (humanOpinionForm[ch] || '').trim()
@@ -652,7 +1185,9 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .guide-list { list-style: none; padding: 0; margin: 0; }
 .guide-list li { font-size: 13px; color: #374151; padding: 4px 0; }
 .guide-list strong { color: #1d4ed8; }
-.sidebar { width: 220px; background: #f8fafc; border-right: 1px solid #e5e7eb; padding: 16px; overflow-y: auto; flex-shrink: 0; }
+.sidebar { width: 220px; background: #f8fafc; border-right: 1px solid #e5e7eb; padding: 16px; overflow-y: visible; flex-shrink: 0; }
+.hist-all { margin-top: 10px; padding: 6px 10px; border: 1px solid #2563eb; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; font-size: 12px; width: 100%; }
+.hist-all:hover { background: #1d4ed8; }
 .sidebar h3 { font-size: 13px; margin: 0 0 12px; color: #374151; }
 .hist-list { display: flex; flex-direction: column; gap: 8px; }
 .hist-item { padding: 8px; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 12px; }
@@ -719,36 +1254,51 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .missing-card { background: #fff; border-radius: 12px; padding: 24px; max-width: 480px; width: 90%; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
 .missing-card h3 { margin: 0 0 8px; font-size: 18px; }
 .missing-hint { color: #666; font-size: 13px; margin-bottom: 16px; }
-.missing-field { margin-bottom: 12px; }
-.missing-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.missing-card-wide { max-width: 760px; max-height: 88vh; overflow-y: auto; }
+
+/* 🔴 逐条填写进度：第 N / M 项 + 所在章节 + 细进度条 */
+.missing-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.mp-count { font-size: 14px; color: #374151; }
+.mp-count b { color: #1d4ed8; font-size: 16px; }
+.mp-where { font-size: 12px; color: #6b7280; background: #f3f4f6; padding: 2px 8px; border-radius: 10px; }
+.mp-bar { flex: 1; min-width: 120px; height: 4px; background: #eef2f7; border-radius: 2px; overflow: hidden; }
+.mp-bar-fill { height: 100%; background: linear-gradient(90deg, #2e5bff, #6a3cff); transition: width .2s; }
+
+.missing-field { display: flex; flex-direction: column; margin-bottom: 12px; }
+.missing-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: #374151; }
 .missing-field label small { font-weight: 400; color: #999; }
-.missing-field input {
+/* 🔴 常驻字数备注 —— 不能只在超限时才报错（业主：限制字数要写备注） */
+.char-note { font-weight: 400; color: #909399; font-size: 12px; margin-left: 6px; }
+.missing-field input,
+.missing-field textarea {
   width: 100%;
   box-sizing: border-box;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
   font-size: 14px;
+  font-family: inherit;
+  line-height: 1.6;
 }
-.missing-field input:focus {
+/* 🔴 长文本用大文本框：一眼能看到整段字（单行 input 根本看不全） */
+.missing-field textarea { resize: vertical; min-height: 120px; }
+.missing-field input:focus,
+.missing-field textarea:focus {
   outline: none;
   border-color: #1d4ed8;
   box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.1);
 }
-.missing-actions { display: flex; gap: 8px; margin-top: 16px; }
+.missing-field input.input-error,
+.missing-field textarea.input-error { border-color: #f56c6c; }
+.req { color: #f56c6c; margin-left: 2px; }
+.field-error { color: #f56c6c; font-size: 12px; margin-top: 3px; }
+.field-usage { color: #909399; font-size: 12px; margin-top: 3px; }
+.missing-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 /* 🔴 人工复核面板：可滚动、分章节卡片、违规高亮 */
 .missing-card { max-height: 85vh; overflow-y: auto; }
 .missing-card::-webkit-scrollbar { width: 8px; }
 .missing-card::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 .missing-card::-webkit-scrollbar-track { background: #f1f5f9; }
-.human-card { max-width: 760px; }
-.human-item {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 12px 14px;
-  margin-bottom: 12px;
-  background: #fafbfc;
-}
 .hr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .hr-head strong { font-size: 14px; color: #111827; }
 .hr-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #f59e0b; color: #fff; }
@@ -797,4 +1347,31 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .dlbtn:hover { background: #047857; }
 .dlbtn-new { background: #1d4ed8; }
 .dlbtn-new:hover { background: #1e40af; }
+
+/* ═══ ③ 选择报告人员 ═══ */
+.pp-hint { text-align: left; margin-bottom: 4px; }
+.pp-tools { display: flex; align-items: center; gap: 14px; margin: 10px 0; flex-wrap: wrap; }
+.pp-tool { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: #374151; cursor: pointer; }
+.pp-count { font-size: 12px; color: #6b7280; margin-left: auto; }
+.pp-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 8px; }
+.pp-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e5e7eb;
+  border-radius: 6px; cursor: pointer; font-size: 13px; background: #fff; }
+.pp-item:hover { border-color: #93c5fd; background: #f8fbff; }
+.pp-item.sel { border-color: #2563eb; background: #eff6ff; }
+.pp-name { font-weight: 600; color: #111827; min-width: 44px; }
+.pp-meta { color: #6b7280; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-role { color: #1d4ed8; font-size: 12px; background: #eef2ff; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+.pp-badge { color: #047857; font-size: 11px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+.pp-img { color: #92400e; font-size: 11px; }
+
+/* 缺口清单（生成完成后提示，不进交付稿） */
+.gap-panel { margin-top: 14px; border: 1px solid #f0c36d; background: #fffbf0; border-radius: 8px; padding: 10px 14px; text-align: left; }
+.gap-panel summary { cursor: pointer; font-size: 14px; color: #8a5a00; }
+.gap-list { margin: 10px 0 0; padding: 0; list-style: none; max-height: 320px; overflow: auto; }
+.gap-item { display: flex; gap: 8px; padding: 6px 0; border-top: 1px dashed #f0d9a8; font-size: 13px; line-height: 1.6; flex-wrap: wrap; }
+.gap-item.warn .gap-detail { color: #b42318; }
+.gap-ch { flex: 0 0 auto; font-weight: 600; color: #8a5a00; }
+.gap-detail { flex: 1 1 auto; color: #5a4a2a; }
+.gap-sentence { flex: 1 1 100%; color: #98a2b3; font-size: 12px; }
+.gap-hint { margin: 10px 0 0; font-size: 12px; color: #98a2b3; }
 </style>

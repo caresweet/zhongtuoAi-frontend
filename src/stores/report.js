@@ -146,7 +146,10 @@ export const useReportStore = defineStore('report', () => {
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = import.meta.env.DEV ? 'localhost:8000' : location.host
-    const url = `${protocol}//${host}/api/v1/reports/ws/${sessionId.value}`
+    // 🔴 token 走 query 参数：浏览器**不能**给 WebSocket 设请求头，
+    //    后端在 accept() 前校验它（见 app/deps.py:authenticate_websocket）。
+    const token = localStorage.getItem('zhongtuo_token') || ''
+    const url = `${protocol}//${host}/api/v1/reports/ws/${sessionId.value}?token=${encodeURIComponent(token)}`
     _ws = new WebSocket(url)
 
     _ws.onopen = () => {
@@ -212,10 +215,23 @@ export const useReportStore = defineStore('report', () => {
       } catch (e) { console.error('[WS] parse error:', e) }
     }
 
-    _ws.onclose = () => {
-      console.log('[WS] disconnected')
+    _ws.onclose = (evt) => {
+      console.log('[WS] disconnected', evt && evt.code)
       _wsReady.value = false
       _ws = null
+      // 🔴 后端主动拒绝的两种码**不要重连**：
+      //    4001 未登录/令牌过期 → 清 token 回登录页（重连只会一直 401）
+      //    4004 会话不存在     → 重连也没用
+      if (evt && evt.code === 4001) {
+        localStorage.removeItem('zhongtuo_token')
+        localStorage.removeItem('zhongtuo_user')
+        if (!location.pathname.includes('/login')) location.href = '/login'
+        return
+      }
+      if (evt && evt.code === 4004) {
+        console.log('[WS] session not found, giving up')
+        return
+      }
       // Auto-reconnect with exponential backoff (max 10 attempts)
       if (_wsReconnectAttempts < _WS_MAX_RECONNECT_ATTEMPTS) {
         const delay = Math.min(1000 * Math.pow(2, _wsReconnectAttempts), 30000)
@@ -492,7 +508,15 @@ export const useReportStore = defineStore('report', () => {
 
       case 'step_progress': {
         // Progress tracking with timing — emitted by orchestrator at each step
+        //
+        // 🔴 后端**从来不发 `timings`**：它发的是
+        //    `{"step":…, "status":…, "step_statuses":{analysis:'done', generation:'running', …}}`
+        //    （见 report.py 的 6 处 `ws_manager.send(sid, "step_progress", …)`）。
+        //    旧实现只读 `timings` → 每次收到消息都把 7 个步骤的 `done` 全刷成 false，
+        //    `assembly.done` 永远为假 → 前端 `pct` 里「assemblyStep.done → 100%」
+        //    那条分支永不触发。业主反馈的「进度条与实际不符」就是这个。
         const steps = data.timings || {}
+        const ss = data.step_statuses || {}
         const prevSteps = progressSteps.value || []
         progressSteps.value = [
           { key: 'analysis', label: '分析资料', elapsed: steps.analysis || 0, done: !!steps.analysis },
@@ -503,6 +527,18 @@ export const useReportStore = defineStore('report', () => {
           { key: 'quality', label: '质量审核', elapsed: steps.quality || 0, done: !!steps.quality },
           { key: 'assembly', label: '组装报告', elapsed: steps.assembly || 0, done: !!steps.assembly },
         ]
+        // ① 按 `step_statuses` 标完成（后端只发这个）
+        for (const s of progressSteps.value) {
+          if (ss[s.key] === 'done') { s.done = true; s.elapsed = s.elapsed || 1 }
+          if (s.done) s.elapsed = s.elapsed || 1
+        }
+        // ② 后端这次没提到的步骤，**保留上一轮的完成状态** —— 否则每来一条消息
+        //    都会把已完成的步骤刷回未完成（进度条看起来在倒退）
+        for (const prev of prevSteps) {
+          if (ss[prev.key] !== undefined) continue
+          const s = progressSteps.value.find(x => x.key === prev.key)
+          if (s && prev.done) { s.done = true; s.elapsed = prev.elapsed || 1 }
+        }
         // Set active on current step; preserve active on previously active steps
         const cur = progressSteps.value.find(s => s.key === data.step)
         if (cur) cur.active = data.status === 'running'
@@ -512,6 +548,20 @@ export const useReportStore = defineStore('report', () => {
             const s = progressSteps.value.find(x => x.key === prev.key)
             if (s) s.active = true
           }
+        }
+        // 🔴 ③ **完成信号也走 `step_progress`**（report.py 最后一条推送带着
+        //    `output_path` / `download_url`）。旧实现把它整条丢掉，于是
+        //    「报告已生成成功」却**不出现下载按钮** —— 业主反馈的就是这个。
+        //    这是唯一一条同时带下载地址的实时信号，必须在这里接住。
+        if (data.download_url) downloadUrl.value = data.download_url
+        else if (data.output_path) downloadUrl.value = `/api/v1/files/${data.output_path}`
+        if (data.step === 'assembly' && data.status === 'done'
+            && (data.download_url || data.output_path)) {
+          phase.value = 'complete'
+          status.value = 'completed'
+          statusMessage.value = '✅ 报告生成完成'
+          progressSteps.value.forEach(s => { s.done = true; s.elapsed = s.elapsed || 1 })
+          _stopPolling()
         }
         if (data.message) statusMessage.value = data.message
         if (data.total_elapsed) totalElapsed.value = data.total_elapsed
@@ -1170,7 +1220,7 @@ export const useReportStore = defineStore('report', () => {
   const workflowMissingFields = ref([])
   const workflowProgress = ref({ current: 0, total: 10 })
 
-  async function generateWithWorkflow(materialsDir = '') {
+  async function generateWithWorkflow(materialsDir = '', selectedPersonnel = [], selectedCertPersonnel = []) {
     if (!sessionId.value) {
       // Create session first
       await startGeneration('生成报告', 0, '默认模板', 'stability')
@@ -1194,6 +1244,8 @@ export const useReportStore = defineStore('report', () => {
         materialsDir: materialsDir,
         projectContext: reportTitle.value || '',
         reportTitle: reportTitle.value || '',
+        selectedPersonnel,
+        selectedCertPersonnel,
       })
       const data = res.data
       statusMessage.value = data.message || '🚀 工作流已启动'
@@ -1251,19 +1303,30 @@ export const useReportStore = defineStore('report', () => {
           status.value = 'error'
           statusMessage.value = data.error || '❌ 生成失败，请重试'
           _stopPolling()
-        } else if (data.phase === 'complete' || data.output_path || (data.running === false && data.phase !== 'paused' && data.phase !== 'idle' && data.phase !== 'error')) {
+        } else if (data.phase === 'paused' || data.paused) {
+          // 🔴 **暂停分支必须排在「完成」之前**。
+          //    接口响应里 `output_path` 字段恒存在，只要它非空（上一轮遗留），
+          //    下面的完成分支就会先把 phase 置成 complete —— 而它一旦跑过，
+          //    `workflowPaused` 就永远不会置位，「待补充信息」弹窗根本不弹，
+          //    同时进度条被算成 100%（业主反馈：「弹窗还没提完就 100%」）。
+          workflowPaused.value = true
+          workflowMissingFields.value = data.missing_fields || []
+          statusMessage.value = '⏸️ 需要补充信息'
+          _stopPolling()
+        } else if (data.phase === 'complete' || data.download_url) {
+          // 🔴 判据收紧成「后端明确说完成」或「下载链接已就绪」。
+          //    原来还带了 `data.output_path`（该字段恒存在、上一轮遗留值非空）
+          //    与 `running === false` 两个宽松条件 —— 那正是「进度条提前满」的入口。
           workflowRunning.value = false
+          workflowPaused.value = false
           phase.value = 'complete'
           status.value = 'completed'
           statusMessage.value = '✅ 报告生成完成'
           progressSteps.value.forEach(s => { s.status = 'done'; s.elapsed = 1 })
+          // 🔴 只认后端给的 `download_url`（它会校验文件真实存在且流程确实结束）。
+          //    以前还有一行「有 output_path 就自己拼 URL」，会把**上一轮遗留的**
+          //    产物路径当成新产物 —— 于是生成还没跑完就出现了下载按钮。
           if (data.download_url) downloadUrl.value = data.download_url
-          if (data.output_path) downloadUrl.value = `/api/v1/files/${data.output_path}`
-          _stopPolling()
-        } else if (data.phase === 'paused' || data.paused) {
-          workflowPaused.value = true
-          workflowMissingFields.value = data.missing_fields || []
-          statusMessage.value = '⏸️ 需要补充信息'
           _stopPolling()
         }
       } catch(e) { /* polling error, ignore */ }

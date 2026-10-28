@@ -49,6 +49,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { formatDate, statusText, statusType } from '@/utils/format'
 import { getReportData, downloadReport } from '@/api/history'
 
@@ -76,9 +77,13 @@ const filledDataEntries = computed(() => {
   return Object.entries(filledData.value).map(([key, value]) => ({ key, value }))
 })
 
-function onDownload() {
-  if (props.report) {
-    window.open(downloadReport(props.report.id), '_blank')
+async function onDownload() {
+  if (!props.report) return
+  try {
+    // 🔴 不能用 window.open(直链)：浏览器直链带不了 Authorization 头，会 401。
+    await downloadReport(props.report.id)
+  } catch (e) {
+    ElMessage.error(e?.message || '下载失败')
   }
 }
 </script>

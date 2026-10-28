@@ -143,6 +143,7 @@
 import { ref, nextTick, computed, watch } from 'vue'
 import { Promotion } from '@element-plus/icons-vue'
 import { marked } from 'marked'
+import { authFetch } from '@/api/report'
 
 // ── State ────────────────────────────────────────────────────────────────────
 const mode = ref('chat')  // 'chat' | 'review'
@@ -164,8 +165,8 @@ async function onFilesSelected(e) {
     const icon = file.name.endsWith('.pdf') ? '📄' : file.name.endsWith('.docx')||file.name.endsWith('.doc') ? '📝'
       : /\.(jpg|png|jpeg|gif|webp)$/i.test(file.name) ? '🖼️' : '📎'
     try {
-      const form = new FormData(); form.append('file', file)
-      const r = await fetch('/api/knowledge/extract-file', { method: 'POST', body: form })
+      const form = new FormData(); form.append('file', file, file.webkitRelativePath || file.name)
+      const r = await authFetch('/api/knowledge/extract-file', { method: 'POST', body: form })
       const d = await r.json()
       const text = (d.data?.text || '').slice(0, MAX_FILE_TEXT)
       attachedFiles.value.push({ name: file.name, text, textLen: text.length, icon })
@@ -188,9 +189,9 @@ async function onReportFileSelected(e) {
   await nextTick(); scrollToBottom()
 
   try {
-    const form = new FormData(); form.append('file', file)
+    const form = new FormData(); form.append('file', file, file.webkitRelativePath || file.name)
     const token = localStorage.getItem('zhongtuo_token') || ''
-    const r = await fetch('/api/knowledge/review-report-file?domain=' + domain.value, {
+    const r = await authFetch('/api/knowledge/review-report-file?domain=' + domain.value, {
       method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: form,
     })
     const reader = r.body.getReader(); const decoder = new TextDecoder(); let buf = ''
@@ -228,7 +229,7 @@ async function reviewReport() {
 
   try {
     const token = localStorage.getItem('zhongtuo_token') || ''
-    const r = await fetch('/api/knowledge/review-report', {
+    const r = await authFetch('/api/knowledge/review-report', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ text, domain: domain.value }),
     })
@@ -262,7 +263,7 @@ async function learnCurrentReport(msg) {
   isLoading.value = true
   try {
     const token = localStorage.getItem('zhongtuo_token') || ''
-    const r = await fetch('/api/knowledge/learn-report', {
+    const r = await authFetch('/api/knowledge/learn-report', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ text, domain: domain.value }),
     })
@@ -350,7 +351,7 @@ async function sendCurrent() {
       .map(m => ({ role: m.role, content: m.content }))
 
     const token = localStorage.getItem('zhongtuo_token') || ''
-    const response = await fetch('/api/knowledge/chat', {
+    const response = await authFetch('/api/knowledge/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

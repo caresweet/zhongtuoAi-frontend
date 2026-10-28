@@ -153,7 +153,7 @@ async function onSubmit() {
     formData.append('title', form.title || form.file.name.replace(/\.[^.]+$/, ''))
     formData.append('document_type', form.document_type)
     formData.append('domain', form.domain)
-    formData.append('file', form.file)
+    formData.append('file', form.file, form.file.webkitRelativePath || form.file.name)
 
     const result = await store.createDocument(formData)
     const docId = result?.id
