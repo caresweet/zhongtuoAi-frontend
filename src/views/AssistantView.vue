@@ -31,7 +31,7 @@
           <button class="gbtn" @click="analyzeIntent" :disabled="!userInput.trim() || isRunning">🔍 分析需求</button>
         </div>
         <div v-if="intentResult" class="intent-guide">
-          <h3>📋 识别为：{{ intentResult.guide.title }}（{{ intentResult.domain === 'stability' ? '稳评' : '投标' }}）</h3>
+          <h3>📋 识别为：{{ intentResult.guide.title }}（{{ domainLabel(intentResult.domain) }}）</h3>
           <p class="intent-desc">{{ intentResult.guide.description }}</p>
           <p class="guide-label">必传资料：</p>
           <ul class="guide-list">
@@ -57,6 +57,12 @@
           <div :class="['dc-card', { sel: domain === 'stability' }]" @click="domain = 'stability'">
             <span class="dc-icon">📊</span>
             <span class="dc-title">社会稳定风险评估报告</span>
+          </div>
+          <!-- 🔴 复垦方案（后端 domain=reclamation 早已支持：10 章 + 报告表 + 22 项附件），
+               此前界面只挂了稳评/投标两张卡，业主找不到入口（2026-10-28 反馈）。 -->
+          <div :class="['dc-card', { sel: domain === 'reclamation' }]" @click="domain = 'reclamation'">
+            <span class="dc-icon">🌱</span>
+            <span class="dc-title">土地复垦方案</span>
           </div>
           <div :class="['dc-card', { sel: domain === 'bidding' }]" @click="onBiddingClick">
             <span class="dc-icon">📋</span>
@@ -187,7 +193,7 @@
 
       <!-- ⑤ Generate + Cancel -->
       <section class="gs">
-        <h2>⑤ 开始生成</h2>
+        <h2>{{ domain === 'stability' ? '⑤' : '③' }} 开始生成</h2>
         <div class="gen-row">
           <button class="gbtn" :disabled="!canGenerate || isRunning" @click="startGenerate">
             {{ isRunning ? '⏳ 生成中...' : '🚀 开始生成报告' }}
@@ -382,6 +388,9 @@ const reportStore = useReportStore()
 const authStore = useAuthStore()
 
 const domain = ref('stability')
+// 域 → 中文简称（识别结果横幅用；以前只有「稳评/投标」两分支，复垦会被错标成投标）
+const DOMAIN_NAMES = { stability: '稳评', reclamation: '复垦', bidding: '投标' }
+function domainLabel(d) { return DOMAIN_NAMES[d] || '稳评' }
 const files = ref([])
 const userInput = ref('')
 const intentResult = ref(null)
