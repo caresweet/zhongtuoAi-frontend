@@ -69,6 +69,11 @@
             <span class="dc-title">投标文件编写</span>
           </div>
         </div>
+        <!-- 🔴 选了非稳评类型后，把「不适用于该类型」的环节显性说明一句，
+             避免用户以为功能缺失（业主 2026-10-28：「选完类型后有些内容就可以屏蔽掉」）。 -->
+        <p v-if="domain === 'reclamation'" class="ghint dc-note">
+          复垦方案不需要勾选「报告人员」「选择证书」——这两步仅稳评使用（复垦的编制单位资质放在<b>附件3</b>），已隐藏。
+        </p>
       </section>
 
       <!-- ② Upload -->
@@ -655,6 +660,14 @@ function toggleAllPersonnel(e) {
 //    只列**有证书扫描件的人**；这几张证书图贴在报告前置「公司营业执照之后」。
 const MAX_CERT_PERSONNEL = 3
 const selectedCertPersonnel = ref([])
+// 🔴 切到非稳评类型时清空「报告人员 / 选择证书」——这两步只对稳评有意义，
+//    留着旧选择会随工作流一起提交（后端会拿去贴稳评工作组名单/证书图）。
+watch(domain, (d) => {
+  if (d !== 'stability') {
+    selectedPersonnel.value = []
+    selectedCertPersonnel.value = []
+  }
+})
 const certCandidates = computed(() =>
   personnel.value.filter(p => (p.cert_image_count || 0) > 0))
 
@@ -976,7 +989,8 @@ async function startGenerate() {
     }
     // 🔴 Use LangGraph workflow for generation (with progress bar)
     console.log('[GENERATE] 启动工作流, session:', reportStore.sessionId)
-    await reportStore.generateWithWorkflow('', selectedPersonnel.value, selectedCertPersonnel.value)
+    await reportStore.generateWithWorkflow('', domain.value === 'stability' ? selectedPersonnel.value : [],
+      domain.value === 'stability' ? selectedCertPersonnel.value : [])
     console.log('[GENERATE] 工作流已启动, 开始轮询日志')
     // Start collecting logs via polling
     _collectLogs()
@@ -1219,6 +1233,7 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .dc-card { flex: 1; padding: 20px 16px; border: 2px solid #e5e7eb; border-radius: 10px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; transition: all .15s; }
 .dc-card:hover { border-color: #93c5fd; }
 .dc-card.sel { border-color: #1d4ed8; background: #eff6ff; }
+.dc-note { margin: 8px 2px 0; color: #6b7280; }
 .dc-icon { font-size: 32px; }
 .dc-title { font-size: 15px; font-weight: 600; }
 
