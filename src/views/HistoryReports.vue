@@ -109,7 +109,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { useHistoryStore } from '@/stores/history'
 import { downloadReport } from '@/api/history'
 import ReportTable from '@/components/history/ReportTable.vue'
@@ -218,12 +218,20 @@ async function onDeleteReport(report) {
 }
 
 async function onDownloadReport(report) {
+  // 报告有几 MB，下载期间必须有反馈 —— 否则用户不知道点没点上，会反复重试
+  const loading = ElLoading.service({ lock: true, text: '正在下载报告…', background: 'rgba(0,0,0,0.45)' })
   try {
     // 🔴 downloadReport 现在**自己发起带鉴权的下载**（返回 Promise），
     //    不能再把它当 URL 塞进 <a href> —— 直链带不了 Authorization 头。
-    await downloadReport(report.id)
+    const { filename, size } = await downloadReport(report.id, (pct, received) => {
+      const kb = received >= 1048576 ? (received / 1048576).toFixed(1) + 'MB' : Math.round(received / 1024) + 'KB'
+      loading.setText(pct == null ? `正在下载 ${kb}…` : `正在下载 ${Math.round(pct * 100)}% · ${kb}`)
+    })
+    ElMessage.success(`已下载：${filename}（${size >= 1048576 ? (size / 1048576).toFixed(1) + 'MB' : Math.round(size / 1024) + 'KB'}）`)
   } catch (e) {
     ElMessage.error(e?.message || '下载失败')
+  } finally {
+    loading.close()
   }
 }
 </script>

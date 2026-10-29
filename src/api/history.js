@@ -27,8 +27,8 @@ export function deleteReport(id) {
 }
 
 // 下载报告文件（带鉴权，见 utils/download.js 里为什么不能用直链）
-export function downloadReport(id) {
-  return downloadFile(`/api/v1/history/reports/${id}/download`)
+export function downloadReport(id, onProgress) {
+  return downloadFile(`/api/v1/history/reports/${id}/download`, '', onProgress)
 }
 
 // Dashboard stats
