@@ -377,6 +377,23 @@
         </div>
       </section>
     </div>
+
+    <!-- 下载进度蒙层：报告有几 MB，下载要几秒；不给反馈用户会以为没点上、反复重试 -->
+    <div v-if="downloading" class="dl-mask">
+      <div class="dl-card">
+        <div class="dl-spin"></div>
+        <p class="dl-title">{{ downloadLabel }}</p>
+        <div class="dl-bar">
+          <div class="dl-bar-fill" :class="{ 'dl-bar-indet': downloadPct < 0 }"
+               :style="{ width: downloadPct < 0 ? '100%' : Math.round(downloadPct * 100) + '%' }"></div>
+        </div>
+        <p class="dl-sub">
+          <template v-if="downloadPct >= 0">{{ Math.round(downloadPct * 100) }}% · {{ fmtSize(downloadReceived) }}</template>
+          <template v-else>已接收 {{ fmtSize(downloadReceived) }}</template>
+        </p>
+        <p class="dl-note">请稍候，下载好会自动保存到浏览器的下载目录</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -880,12 +897,8 @@ watch(() => reportStore.phase, async (p) => {
     const url = reportStore.downloadUrl
     if (url) {
       _downloadTimer = setTimeout(async () => {
-        try {
-          await downloadFile(url)
-        } catch (e) {
-          console.error('[DL] 自动下载失败:', e)
-          ElMessage.error('自动下载失败，请点「下载报告」按钮重试')
-        }
+        // 失败提示由 _downloadWithFeedback 统一弹，这里不再重复
+        await _downloadWithFeedback(url, '报告')
         _downloadTimer = null
       }, 300)
     }
@@ -1117,23 +1130,44 @@ function _collectLogs() {
 
 function onDownload() { setTimeout(() => { showProgress.value = false }, 1000) }
 
+// ── 下载反馈 ──
+// 🔴 业主反馈「下载文件没有提示，用户都不知道自己有没有正在下载」：
+//    报告 docx 有几 MB，点下去到落盘之间界面毫无动静，用户会重复点。
+//    → 下载期间盖一层蒙层显示百分比，下完再弹「已下载：文件名（大小）」
+const downloading = ref(false)
+const downloadLabel = ref('正在下载报告…')
+const downloadPct = ref(-1)        // 0~1；-1 = 服务器没给总长度，只能显示已接收字节
+const downloadReceived = ref(0)
+
 // 🔴 带鉴权下载（直链 <a href> 不带 Authorization，/api/v1/files/* 会 401）
-async function doDownload() {
-  const url = reportStore.downloadUrl
+async function _downloadWithFeedback(url, label = '报告') {
   if (!url) return
+  if (downloading.value) { ElMessage.info('正在下载上一个文件，请稍候…'); return }
+  downloading.value = true
+  downloadLabel.value = `正在下载${label}…`
+  downloadPct.value = -1
+  downloadReceived.value = 0
+  const t0 = Date.now()
   try {
-    await downloadFile(url)
+    const { filename, size } = await downloadFile(url, '', (pct, received) => {
+      downloadPct.value = pct == null ? -1 : pct
+      downloadReceived.value = received
+    })
+    const secs = ((Date.now() - t0) / 1000).toFixed(1)
+    ElMessage.success({
+      message: `已下载：${filename}（${fmtSize(size)}，用时 ${secs} 秒）`,
+      duration: 6000,
+      showClose: true,
+    })
   } catch (e) {
-    ElMessage.error(e?.message || '下载失败')
+    ElMessage.error(e?.message || '下载失败，请重试')
+  } finally {
+    downloading.value = false
   }
 }
-async function dlHistory(h) {
-  if (!h.download_url) return
-  try {
-    await downloadFile(h.download_url)
-  } catch (e) {
-    ElMessage.error(e?.message || '下载失败')
-  }
+function doDownload() { return _downloadWithFeedback(reportStore.downloadUrl, '报告') }
+function dlHistory(h) {
+  return _downloadWithFeedback(h.download_url, `《${h.title || '报告'}》`)
 }
 
 // 🔴 人工复核：提交修改思路 → 交给 AI 携意见重写本章
@@ -1395,6 +1429,22 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .dlbtn:hover { background: #047857; }
 .dlbtn-new { background: #1d4ed8; }
 .dlbtn-new:hover { background: #1e40af; }
+
+/* 下载进度蒙层 */
+.dl-mask { position: fixed; inset: 0; background: rgba(17,24,39,0.45); display: flex;
+  align-items: center; justify-content: center; z-index: 2000; }
+.dl-card { background: #fff; border-radius: 12px; padding: 24px 28px; width: 340px; text-align: center;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.25); }
+.dl-spin { width: 32px; height: 32px; margin: 0 auto 12px; border: 3px solid #d1fae5;
+  border-top-color: #059669; border-radius: 50%; animation: dl-spin 0.8s linear infinite; }
+@keyframes dl-spin { to { transform: rotate(360deg); } }
+.dl-title { margin: 0 0 12px; font-size: 15px; font-weight: 600; color: #111827; }
+.dl-bar { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+.dl-bar-fill { height: 100%; background: #059669; border-radius: 4px; transition: width .2s; }
+.dl-bar-indet { animation: dl-pulse 1.2s ease-in-out infinite; }
+@keyframes dl-pulse { 0%,100% { opacity: .35 } 50% { opacity: .9 } }
+.dl-sub { margin: 8px 0 0; font-size: 13px; color: #059669; font-weight: 600; }
+.dl-note { margin: 6px 0 0; font-size: 12px; color: #6b7280; }
 
 /* ═══ ③ 选择报告人员 ═══ */
 .pp-hint { text-align: left; margin-bottom: 4px; }
