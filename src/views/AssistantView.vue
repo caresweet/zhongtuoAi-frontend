@@ -814,25 +814,46 @@ let _downloadTimer = null
 onMounted(() => {
   loadHistory()
   loadPersonnel()               // ③ 在职人员名单（默认勾选持稳评培训证书者）
-  // 🔴 页面刷新/关闭时取消正在运行的工作流
-  window.addEventListener('beforeunload', _onUnload)
+  _restoreSession()
 })
+
+// 🔴 刷新后接着看：把上次的会话接回来（24 小时内），重新开始轮询状态。
+//    暂停态会把「待补充信息」弹窗重新顶出来，用户填完即可继续。
+function _restoreSession() {
+  try {
+    const raw = localStorage.getItem(REPORT_SESSION_KEY)
+    if (!raw) return
+    const { id, ts } = JSON.parse(raw) || {}
+    if (!id || !ts || Date.now() - ts > 24 * 3600 * 1000) { _forgetSession(); return }
+    if (reportStore.sessionId) return          // 当前页已有会话，不覆盖
+    reportStore.sessionId = id
+    showProgress.value = true
+    workflowLogs.value = ['🔄 已接回上次的生成会话，正在同步状态...']
+    _collectLogs()
+  } catch { _forgetSession() }
+}
 import { onBeforeUnmount } from 'vue'
 onBeforeUnmount(() => {
-  window.removeEventListener('beforeunload', _onUnload)
   // 🔴 Clean up all timers to prevent memory leaks
   if (_logTimer) { clearInterval(_logTimer); _logTimer = null }
   if (_downloadTimer) { clearTimeout(_downloadTimer); _downloadTimer = null }
   // Abort SSE if still streaming
   reportStore.cancelGeneration()
 })
-async function _onUnload() {
-  if (reportStore.workflowRunning && reportStore.sessionId) {
-    // Send cancel signal (fire-and-forget, don't block page unload)
-    try {
-      await authFetch(`/api/v1/reports/generate/${reportStore.sessionId}/cancel`, { method: 'POST' })
-    } catch {}  // Ignore network errors on cancel
-  }
+// 🔴 刷新/关页**不再取消生成**（业主 2026-10-29：「前台卡住了」）。
+//    以前只要页面卸载就 POST /cancel —— 用户误刷新一次，后台工作流就被杀掉，
+//    会话停在「生成中/暂停」状态，回来一看就是卡死，还得从头再来。
+//    现在：后台继续跑，会话 id 存在 localStorage，回来能接着看进度/填弹窗。
+const REPORT_SESSION_KEY = 'zhongtuo_report_session'
+
+function _rememberSession(id) {
+  try {
+    if (id) localStorage.setItem(REPORT_SESSION_KEY, JSON.stringify({ id, ts: Date.now() }))
+  } catch { /* 隐私模式忽略 */ }
+}
+
+function _forgetSession() {
+  try { localStorage.removeItem(REPORT_SESSION_KEY) } catch {}
 }
 async function loadHistory() {
   try {
@@ -853,6 +874,8 @@ async function loadHistory() {
 // 🔴 不能用 <a href> 直链：浏览器直链不带 Authorization 头，/api/v1/files/* 会 401。
 //    必须走 downloadFile()（authFetch 拿 blob 再落盘），见 utils/download.js。
 watch(() => reportStore.phase, async (p) => {
+  // 生成结束（成功/失败）就不再接回这个会话，避免下次进页面对着一份旧进度
+  if (p === 'complete' || p === 'error') _forgetSession()
   if (p === 'complete') {
     const url = reportStore.downloadUrl
     if (url) {
@@ -991,6 +1014,7 @@ async function startGenerate() {
     console.log('[GENERATE] 启动工作流, session:', reportStore.sessionId)
     await reportStore.generateWithWorkflow('', domain.value === 'stability' ? selectedPersonnel.value : [],
       domain.value === 'stability' ? selectedCertPersonnel.value : [])
+    _rememberSession(reportStore.sessionId)
     console.log('[GENERATE] 工作流已启动, 开始轮询日志')
     // Start collecting logs via polling
     _collectLogs()
