@@ -10,6 +10,18 @@
       <el-form-item label="模板名称" prop="name">
         <el-input v-model="form.name" placeholder="例如：社会稳定性风险评估报告模板" maxlength="255" />
       </el-form-item>
+      <el-form-item label="报告领域" prop="domain">
+        <el-select v-model="form.domain" placeholder="选择领域" style="width: 100%">
+          <el-option v-for="d in domains" :key="d.value" :label="d.label" :value="d.value" />
+        </el-select>
+        <div class="el-upload__tip">决定这份模板用在哪种报告上（稳评/复垦/投标）</div>
+      </el-form-item>
+      <el-form-item label="地区" prop="region">
+        <el-select v-model="form.region" placeholder="通用（不限地区）" filterable allow-create default-first-option clearable style="width: 100%">
+          <el-option v-for="r in regions" :key="r" :label="r" :value="r" />
+        </el-select>
+        <div class="el-upload__tip">同一类报告各地模板不同：填地区后，生成时按项目地名自动选用这一版；留空=通用</div>
+      </el-form-item>
       <el-form-item label="模板分类" prop="category">
         <el-select v-model="form.category" placeholder="选择分类" style="width: 100%">
           <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
@@ -67,7 +79,7 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useKnowledgeStore } from '@/stores/knowledge'
-import { REPORT_CATEGORIES } from '@/utils/constants'
+import { REPORT_CATEGORIES, REPORT_DOMAINS, TEMPLATE_REGIONS } from '@/utils/constants'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -79,10 +91,14 @@ const store = useKnowledgeStore()
 const formRef = ref()
 const uploading = ref(false)
 const categories = REPORT_CATEGORIES
+const domains = REPORT_DOMAINS
+const regions = TEMPLATE_REGIONS
 
 const form = reactive({
   name: '',
   category: '社会稳定性风险评估',
+  domain: 'stability',
+  region: '',
   description: '',
   templateFile: null,
   exampleFile: null,
@@ -106,6 +122,8 @@ async function onSubmit() {
     const formData = new FormData()
     formData.append('name', form.name)
     formData.append('category', form.category)
+    formData.append('domain', form.domain)
+    formData.append('region', form.region || '')
     formData.append('description', form.description || '')
     formData.append('template_file', form.templateFile)
     if (form.exampleFile) {

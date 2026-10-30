@@ -26,6 +26,16 @@
               </el-input>
             </el-col>
             <el-col :span="6">
+              <el-select v-model="filterDomain" placeholder="领域筛选" clearable @change="loadTemplates" style="width: 100%">
+                <el-option v-for="d in domainOptions" :key="d.value" :label="d.label" :value="d.value" />
+              </el-select>
+            </el-col>
+            <el-col :span="4">
+              <el-select v-model="filterRegion" placeholder="地区筛选" clearable @change="loadTemplates" style="width: 100%">
+                <el-option v-for="r in regionOptions" :key="r" :label="r" :value="r" />
+              </el-select>
+            </el-col>
+            <el-col :span="6">
               <el-select v-model="filterCategory" placeholder="分类筛选" clearable @change="loadTemplates" style="width: 100%">
                 <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
               </el-select>
@@ -202,6 +212,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { RefreshRight } from '@element-plus/icons-vue'
 import { useKnowledgeStore } from '@/stores/knowledge'
 import { getCategories } from '@/api/knowledge'
+import { REPORT_DOMAINS, TEMPLATE_REGIONS } from '@/utils/constants'
 import TemplateTable from '@/components/knowledge/TemplateTable.vue'
 import TemplateUploadDialog from '@/components/knowledge/TemplateUploadDialog.vue'
 import TemplateDetailDrawer from '@/components/knowledge/TemplateDetailDrawer.vue'
@@ -214,6 +225,10 @@ const activeTab = ref('templates')
 // Template state
 const searchText = ref('')
 const filterCategory = ref('')
+const filterDomain = ref('')
+const filterRegion = ref('')
+const domainOptions = REPORT_DOMAINS
+const regionOptions = TEMPLATE_REGIONS
 const categories = ref([])
 const showUploadDialog = ref(false)
 const showDetailDrawer = ref(false)
@@ -241,7 +256,13 @@ function onTabChange(tab) {
 
 // ---- Template ----
 async function loadTemplates() {
-  await store.fetchTemplates({ page: currentTemplatePage.value, page_size: 20, search: searchText.value || undefined, category: filterCategory.value || undefined })
+  await store.fetchTemplates({
+    page: currentTemplatePage.value, page_size: 20,
+    search: searchText.value || undefined,
+    category: filterCategory.value || undefined,
+    domain: filterDomain.value || undefined,
+    region: filterRegion.value || undefined,
+  })
 }
 async function loadCategories() {
   try { const res = await getCategories(); categories.value = res.data || [] } catch (e) {}

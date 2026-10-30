@@ -1255,7 +1255,9 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .mat-optional { margin-top: 8px; font-size: 13px; color: #6b7280; }
 .mat-optional summary { cursor: pointer; }
 .fl-mat { font-size: 11px; color: #1d4ed8; background: #eff6ff; border-radius: 4px; padding: 1px 6px; flex-shrink: 0; }
-.gen-layout { display: flex; height: 100vh; overflow: hidden; }
+/* 🔴 整页固定：外层 app 外壳不再滚窗口（见 AppLayout `.pl-content.is-fixed`），
+   这里占满可用高度，**只有 .gen 正文区和 .sidebar 各自内部滚动**。 */
+.gen-layout { display: flex; height: 100%; overflow: hidden; }
 .intent-row { display: flex; gap: 10px; margin-bottom: 12px; }
 .intent-input { flex: 1; min-width: 0; box-sizing: border-box; padding: 12px 14px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; outline: none; }
 .intent-input:focus { border-color: #1d4ed8; }
@@ -1266,7 +1268,7 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .guide-list { list-style: none; padding: 0; margin: 0; }
 .guide-list li { font-size: 13px; color: #374151; padding: 4px 0; }
 .guide-list strong { color: #1d4ed8; }
-.sidebar { width: 220px; background: #f8fafc; border-right: 1px solid #e5e7eb; padding: 16px; overflow-y: visible; flex-shrink: 0; }
+.sidebar { width: 220px; background: #f8fafc; border-right: 1px solid #e5e7eb; padding: 16px; overflow-y: auto; flex-shrink: 0; }
 .hist-all { margin-top: 10px; padding: 6px 10px; border: 1px solid #2563eb; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; font-size: 12px; width: 100%; }
 .hist-all:hover { background: #1d4ed8; }
 .sidebar h3 { font-size: 13px; margin: 0 0 12px; color: #374151; }

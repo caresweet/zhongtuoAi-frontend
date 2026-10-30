@@ -487,7 +487,9 @@ function renderMarkdown(text) {
 .chat-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 136px);
+  /* 外层 app 外壳固定一屏（.pl-content.is-fixed），这里占满可用高度，
+     对话列表在内部滚动，不出现窗口滚动条 */
+  height: 100%;
   max-width: 900px;
   margin: 0 auto;
 }

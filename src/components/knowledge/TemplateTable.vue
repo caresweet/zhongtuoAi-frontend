@@ -7,6 +7,17 @@
           <el-link type="primary" @click="$emit('view', row)">{{ row.name }}</el-link>
         </template>
       </el-table-column>
+      <el-table-column prop="domain" label="领域" width="100">
+        <template #default="{ row }">
+          <el-tag size="small" :type="domainType(row.domain)" effect="plain">{{ domainLabel(row.domain) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="region" label="地区" width="90">
+        <template #default="{ row }">
+          <span v-if="row.region">{{ row.region }}</span>
+          <span v-else class="muted">通用</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="category" label="分类" width="120">
         <template #default="{ row }">
           <el-tag size="small">{{ row.category }}</el-tag>
@@ -72,4 +83,13 @@ function analysisStatusType(s) {
   const map = { pending: 'info', analyzing: 'warning', completed: 'success', failed: 'danger' }
   return map[s] || 'info'
 }
+
+const DOMAIN_LABELS = { stability: '稳评', reclamation: '复垦', bidding: '投标' }
+const DOMAIN_TYPES = { stability: 'primary', reclamation: 'success', bidding: 'warning' }
+function domainLabel(d) { return DOMAIN_LABELS[d] || d || '稳评' }
+function domainType(d) { return DOMAIN_TYPES[d] || 'info' }
 </script>
+
+<style scoped>
+.muted { color: #b0b7c3 }
+</style>

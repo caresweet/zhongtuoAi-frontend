@@ -45,7 +45,7 @@
 
     <!-- 内容 -->
     <main class="pl-main">
-      <div class="pl-content">
+      <div class="pl-content" :class="{ 'is-fixed': isFixedPage }">
         <router-view />
       </div>
     </main>
@@ -94,6 +94,13 @@ const navMore = computed(() => authStore.isStaff ? _navMoreAdmin : [])
 
 const avatarText = computed(() => (authStore.displayName || '用').slice(0, 1))
 
+// 🔴 整页型页面（报告助手、知识问答）：**不出现窗口滚动条**，
+//    页面自己占满一屏，多出来的内容在页面内部的滚动区里滚。
+//    其它列表页则由 .pl-content 内部滚动 —— 整个 app 永远不滚窗口
+//    （业主 2026-10-30：「界面就固定一整页，多余的内容用内部滚动条」）。
+const FIXED_PAGES = ['/app/assistant', '/app/knowledge-chat']
+const isFixedPage = computed(() => FIXED_PAGES.some(p => route.path.startsWith(p)))
+
 function isActive(p) {
   if (p === '/app/dashboard') return route.path === '/app/dashboard' || route.path === '/app/'
   return route.path.startsWith(p)
@@ -111,7 +118,8 @@ async function handleLogout() {
 </script>
 
 <style scoped>
-.pl-shell { min-height: 100vh; display: flex; flex-direction: column; background: var(--app-bg-grad); font-family: var(--el-font-family) }
+/* 外壳固定一屏：窗口永不出现滚动条 */
+.pl-shell { height: 100vh; overflow: hidden; display: flex; flex-direction: column; background: var(--app-bg-grad); font-family: var(--el-font-family) }
 
 /* ── 顶部 ── */
 .pl-top { position: sticky; top: 0; z-index: 60; background: rgba(255,255,255,.94); backdrop-filter: blur(10px); border-bottom: 1px solid #eef1f7 }
@@ -132,7 +140,9 @@ async function handleLogout() {
 .pl-user:hover { background:#f2f5ff }
 .pl-avatar { width:32px;height:32px;border-radius:50%; background:linear-gradient(135deg,#2e5bff,#5a3cff); color:#fff; display:flex; align-items:center; justify-content:center; font-size:14px }
 
-/* ── 内容 ── */
-.pl-main { flex:1; }
-.pl-content { max-width: 1280px; margin: 0 auto; padding: 26px 22px 60px }
+/* ── 内容：窄屏/列表页在 .pl-content 内部滚动；整页型页面不滚动 ── */
+.pl-main { flex:1; min-height:0; display:flex; flex-direction:column }
+.pl-content { flex:1; min-height:0; width:100%; max-width: 1280px; margin: 0 auto; padding: 26px 22px 60px; overflow-y: auto }
+/* 整页型（报告助手 / 知识问答）：外层不滚、不留底部留白，内部自己滚 */
+.pl-content.is-fixed { overflow: hidden; padding-bottom: 0 }
 </style>
