@@ -234,17 +234,45 @@
           <a href="#" class="dlbtn" @click.prevent="doDownload">📥 下载报告 (.docx)</a>
           <button class="dlbtn dlbtn-new" @click="resetAll">🔄 生成新报告</button>
         </div>
-        <!-- 缺口清单：只在这里提示，不写进交付稿 -->
-        <details v-if="phase === 'complete' && gaps && gaps.total" class="gap-panel">
-          <summary>⚠️ 本次生成有 <b>{{ gaps.total }}</b> 处「待补充 / 待核对」（{{ gaps.warnings || 0 }} 处需重点看）—— 点开看明细</summary>
-          <ul class="gap-list">
-            <li v-for="(g, i) in gaps.items" :key="i" :class="['gap-item', g.severity]">
+        <!-- 交付体检 + 缺口清单：只在这里提示，不写进交付稿
+             🔴 业主口径（2026-10-30）：报告生成后要达到 80% 可用率、用户只看一遍就过。
+                所以这里先报「可用率」，再列「需要扫一眼的地方」，不用翻全文找问题。 -->
+        <details v-if="phase === 'complete' && (audit || (gaps && gaps.total))" class="gap-panel">
+          <summary>
+            <template v-if="audit && audit.total">
+              📋 交付体检：可用率 <b :class="{ 'audit-bad': audit.below_target }">{{ auditPct }}%</b>
+              <span v-if="audit.flagged"> · 需扫一眼 <b>{{ audit.flagged }}</b> 段</span>
+            </template>
+            <template v-else-if="gaps && gaps.total">
+              ⚠️ 本次生成有 <b>{{ gaps.total }}</b> 处「待补充 / 待核对」
+            </template>
+            <span v-if="gaps && gaps.total"> · 缺口 <b>{{ gaps.total }}</b> 处（{{ gaps.warnings || 0 }} 处重点看）</span>
+            —— 点开看明细
+          </summary>
+
+          <!-- 体检清单：套话腔 / 空泛表述 / 待补充 -->
+          <ul v-if="audit && audit.items && audit.items.length" class="gap-list">
+            <li v-for="(a, i) in audit.items" :key="'a' + i" class="gap-item">
+              <span class="gap-ch">第 {{ a.chapter }} 章</span>
+              <span class="gap-kind">{{ a.label }}</span>
+              <span class="gap-detail">{{ a.detail }}</span>
+              <span v-if="a.text" class="gap-sentence">原文：{{ a.text }}…</span>
+            </li>
+          </ul>
+
+          <!-- 缺口清单（缺数据/缺依据） -->
+          <ul v-if="gaps && gaps.items && gaps.items.length" class="gap-list">
+            <li v-for="(g, i) in gaps.items" :key="'g' + i" :class="['gap-item', g.severity]">
               <span class="gap-ch">第 {{ g.chapter }} 章</span>
               <span class="gap-detail">{{ g.detail }}</span>
               <span v-if="g.sentence" class="gap-sentence">原句：{{ g.sentence }}</span>
             </li>
           </ul>
-          <p class="gap-hint">这些是正文里用「以…为准」圆过去、或句内缺依据的地方，交稿前建议人工核对一遍。报告文件里不含这些提示。</p>
+
+          <p class="gap-hint">
+            体检口径：逐段判「能不能直接用」，可用率 = 不用改的段落 ÷ 全部段落（目标 ≥ 80%）。
+            清单里是套话腔、空泛表述、待补充/待核对的地方——扫一眼改掉即可，报告文件里不含这些提示。
+          </p>
         </details>
         <!-- 🔴 缺失信息弹窗 —— **一次只问一项**
              （业主：不要把整个章节的字段一次性铺出来；输入框要大，一眼看全；
@@ -470,6 +498,9 @@ function goHistory() { router.push('/app/history') }
 const workflowLogs = ref([])
 // 缺口清单（生成完成后提示「这章缺什么」）—— 不写进交付稿
 const gaps = ref(null)
+// 交付体检（80% 可用率目标）：{ rate, total, flagged, below_target, items[] }
+const audit = ref(null)
+const auditPct = computed(() => Math.round(((audit.value?.rate) || 0) * 1000) / 10)
 const logBody = ref(null)
 const missingFields = ref([])
 const missingForm = reactive({})
@@ -911,7 +942,20 @@ watch(() => reportStore.phase, async (p) => {
     try {
       const res = await getSessionGaps(reportStore.sessionId)
       gaps.value = res?.data || null
-      if (gaps.value?.total) {
+      audit.value = res?.data?.audit || null
+      // 交付体检优先播报：先告诉用户「能不能直接用、要扫哪几处」
+      if (audit.value?.total) {
+        const pct = auditPct.value
+        const below = audit.value.below_target
+        ElNotification({
+          title: below ? `报告已生成，可用率 ${pct}%（低于 80% 目标）` : `报告已生成，可用率 ${pct}%`,
+          message: below
+            ? `有 ${audit.value.flagged} 段建议扫一眼（套话腔/空泛表述/待补充），展开下方「交付体检」可逐条看`
+            : `需扫一眼 ${audit.value.flagged} 段，基本可以读一遍就用 —— 展开下方「交付体检」看清单`,
+          type: below ? 'warning' : 'success',
+          duration: 9000,
+        })
+      } else if (gaps.value?.total) {
         ElNotification({
           title: '报告已生成，有几处建议人工核对',
           message: `共 ${gaps.value.total} 处「待补充 / 待核对」，其中 ${gaps.value.warnings || 0} 处需重点看 —— 展开下方清单可查看逐条明细`,
@@ -1215,6 +1259,8 @@ function resetAll() {
   showProgress.value = false
   workflowLogs.value = []
   missingFields.value = []
+  gaps.value = null
+  audit.value = null
   if (_logTimer) clearInterval(_logTimer)
   files.value = []
   _maxPct = 0
@@ -1470,6 +1516,8 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .gap-list { margin: 10px 0 0; padding: 0; list-style: none; max-height: 320px; overflow: auto; }
 .gap-item { display: flex; gap: 8px; padding: 6px 0; border-top: 1px dashed #f0d9a8; font-size: 13px; line-height: 1.6; flex-wrap: wrap; }
 .gap-item.warn .gap-detail { color: #b42318; }
+.gap-kind { font-size: 12px; color: #8a5a00; background: #fff3d6; border-radius: 4px; padding: 0 6px; flex-shrink: 0; }
+.audit-bad { color: #b42318; }
 .gap-ch { flex: 0 0 auto; font-weight: 600; color: #8a5a00; }
 .gap-detail { flex: 1 1 auto; color: #5a4a2a; }
 .gap-sentence { flex: 1 1 100%; color: #98a2b3; font-size: 12px; }
