@@ -1220,10 +1220,11 @@ export const useReportStore = defineStore('report', () => {
   const workflowMissingFields = ref([])
   const workflowProgress = ref({ current: 0, total: 10 })
 
-  async function generateWithWorkflow(materialsDir = '', selectedPersonnel = [], selectedCertPersonnel = []) {
+  async function generateWithWorkflow(materialsDir = '', selectedPersonnel = [], selectedCertPersonnel = [], domain = '') {
+    const _dom = domain || selectedDomain.value || ''
     if (!sessionId.value) {
-      // Create session first
-      await startGeneration('生成报告', 0, '默认模板', 'stability')
+      // 🔴 不能写死 'stability' —— 选了复垦也要按复垦建会话（业主 2026-10-31）
+      await startGeneration('生成报告', 0, '默认模板', _dom, _dom)
     }
     if (!sessionId.value) return
 
@@ -1246,6 +1247,7 @@ export const useReportStore = defineStore('report', () => {
         reportTitle: reportTitle.value || '',
         selectedPersonnel,
         selectedCertPersonnel,
+        domain: _dom,
       })
       const data = res.data
       statusMessage.value = data.message || '🚀 工作流已启动'

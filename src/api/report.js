@@ -101,11 +101,14 @@ export function cancelGeneration(sessionId) {
 // ═══════════════════════════════════════════════════════
 
 // Start LangGraph workflow generation (returns immediately, runs in background)
-export function startWorkflow(sessionId, { materialsDir, projectContext, reportTitle, selectedPersonnel, selectedCertPersonnel } = {}) {
+export function startWorkflow(sessionId, { materialsDir, projectContext, reportTitle, selectedPersonnel, selectedCertPersonnel, domain } = {}) {
   return client.post(`/reports/generate/${sessionId}/workflow/start`, {
     materials_dir: materialsDir || '',
     project_context: projectContext || '',
     report_title: reportTitle || '',
+    // 🔴 报告类型（stability/reclamation/bidding）：后端据此纠正会话域，
+    //    避免「选了复垦却用稳评模板出报告」（业主 2026-10-31 实测）
+    domain: domain || '',
     // 🔴 用户勾选的报告人员（前置工作组名单 + 培训证书取图）
     selected_personnel: selectedPersonnel || [],
     // 🔴 「选择证书」独立多选框（最多 3 人）→ 公司营业执照之后贴哪几张人员证书图

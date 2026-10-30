@@ -1044,8 +1044,9 @@ async function addFiles(fileList) {
     try {
       if (!reportStore.sessionId) {
         reportStore.setSelectedDomain(domain.value)
-        await reportStore.startGeneration('生成报告', 0, domain.value)
-        console.log('[UPLOAD] 创建会话:', reportStore.sessionId)
+        // startGeneration(initialMessage, tplId, tplName, intent, domain)
+        await reportStore.startGeneration('生成报告', 0, '默认模板', domain.value, domain.value)
+        console.log('[UPLOAD] 创建会话:', reportStore.sessionId, '域:', domain.value)
       }
       const r = await reportStore.uploadFile(f)
       if (r?.file_path) {
@@ -1129,14 +1130,20 @@ async function startGenerate() {
   _maxPct = 0
   workflowLogs.value = ['🚀 正在启动工作流...']
   try {
+    // 🔴 报告类型必须与会话一致：上次是稳评、这次选复垦时，不能复用那个会话，
+    //    否则整条工作流按稳评域跑、连模板都取稳评的（业主 2026-10-31 实测）。
+    if (reportStore.sessionId && reportStore.selectedDomain && reportStore.selectedDomain !== domain.value) {
+      resetAll()
+    }
     if (!reportStore.sessionId) {
       reportStore.setSelectedDomain(domain.value)
-      await reportStore.startGeneration('生成报告', 0, domain.value)
+      // startGeneration(initialMessage, tplId, tplName, intent, domain) —— 后两个才是「域」
+      await reportStore.startGeneration('生成报告', 0, '默认模板', domain.value, domain.value)
     }
     // 🔴 Use LangGraph workflow for generation (with progress bar)
-    console.log('[GENERATE] 启动工作流, session:', reportStore.sessionId)
+    console.log('[GENERATE] 启动工作流, session:', reportStore.sessionId, '域:', domain.value)
     await reportStore.generateWithWorkflow('', domain.value === 'stability' ? selectedPersonnel.value : [],
-      domain.value === 'stability' ? selectedCertPersonnel.value : [])
+      domain.value === 'stability' ? selectedCertPersonnel.value : [], domain.value)
     _rememberSession(reportStore.sessionId)
     console.log('[GENERATE] 工作流已启动, 开始轮询日志')
     // Start collecting logs via polling
