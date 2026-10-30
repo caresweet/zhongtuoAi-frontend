@@ -1,7 +1,11 @@
 <template>
   <div class="knowledge-base">
     <div class="page-header">
-      <h2 class="page-title">知识库管理</h2>
+      <!-- 🔴 概念区分（业主 2026-10-30）：「知识库指的是知识不是一些文档啥的，模板才是文档」。
+           模板 = 报告版式与固定内容的 docx；资料 = 提炼知识用的法规/标准/案例原文。 -->
+      <h2 class="page-title">知识库管理
+        <span class="page-sub">模板是文档（版式与固定内容）· 资料是知识来源（法规/标准/案例）</span>
+      </h2>
       <div class="header-actions">
         <el-button v-if="activeTab === 'templates'" type="primary" @click="showUploadDialog = true">
           <el-icon><Upload /></el-icon> 上传模板
@@ -17,7 +21,7 @@
 
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
       <!-- ===== 模板管理 ===== -->
-      <el-tab-pane label="模板管理" name="templates">
+      <el-tab-pane label="模板（文档）" name="templates">
         <el-card shadow="never" class="filter-card">
           <el-row :gutter="16">
             <el-col :span="8">
@@ -57,7 +61,7 @@
       </el-tab-pane>
 
       <!-- ===== 知识文档 ===== -->
-      <el-tab-pane label="知识文档" name="documents">
+      <el-tab-pane label="资料（知识来源）" name="documents">
         <el-card shadow="never" class="filter-card">
           <el-row :gutter="12" align="middle">
             <el-col :span="3">
@@ -386,6 +390,12 @@ function formatFileSize(bytes) {
   font-weight: 600;
   margin: 0;
   color: #303133;
+}
+.page-sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: #909399;
+  margin-left: 10px;
 }
 .header-actions {
   display: flex;
