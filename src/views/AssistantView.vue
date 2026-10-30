@@ -973,7 +973,7 @@ const currentMaterial = ref('')
 function clickFile() {
   const inp = document.createElement('input')
   inp.type = 'file'; inp.multiple = true
-  inp.accept = '.png,.jpg,.jpeg,.gif,.webp,.pdf,.docx,.doc,.xlsx,.xls,.csv,.txt,.dwg,.dxf'
+  inp.accept = UPLOAD_ACCEPT
   inp.onchange = (e) => { onFiles(e); inp.remove() }
   inp.click()
 }
@@ -997,16 +997,50 @@ function clickFolder() {
 async function onFiles(e) { await addFiles(e.target.files); e.target.value = '' }
 async function onFolder(e) {
   const fs = e.target.files
-  if (fs?.length) { await addFiles(fs); ElMessage.success(`已上传 ${fs.length} 个文件`) }
+  if (fs?.length) await addFiles(fs)
   e.target.value = ''
 }
 async function onDrop(e) { await addFiles(e.dataTransfer.files) }
+// 🔴 与后端 ALLOWED_ATTACHMENT_EXTENSIONS 对齐：不支持的扩展名**不发请求**，
+//    直接告诉用户「这几个没传、为什么」——以前是整文件夹上传，shapefile 组件
+//    一个个 400，用户只看到「传了一半」，不知道是哪几个（业主 2026-10-30）。
+const UPLOAD_EXTS = [
+  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'heic', 'heif',
+  'pdf', 'docx', 'doc', 'xlsx', 'xls', 'csv', 'ppt', 'pptx',
+  'txt', 'md', 'zip', 'rar', 'dwg', 'dxf',
+  // GIS 矢量数据（Shapefile 一整套，缺一个都打不开）
+  'shp', 'shx', 'dbf', 'prj', 'cpg', 'sbn', 'sbx', 'qpj', 'xml',
+]
+const UPLOAD_ACCEPT = UPLOAD_EXTS.map(e => '.' + e).join(',')
+// 系统/软件副产物：永远不用传，也不提示
+const JUNK_NAMES = ['thumbs.db', '.ds_store', 'desktop.ini', '.gitignore']
+
+function _extOf(name) {
+  const n = (name || '').toLowerCase()
+  const i = n.lastIndexOf('.')
+  return i >= 0 ? n.slice(i + 1) : ''
+}
+function _isJunk(name) {
+  const n = (name || '').toLowerCase().split('/').pop()
+  return JUNK_NAMES.includes(n) || n.startsWith('._')
+}
+
 async function addFiles(fileList) {
-  console.log(`[UPLOAD] 开始上传 ${fileList.length} 个文件`)
+  const all = Array.from(fileList || [])
+  const todo = [], unsupported = []
+  for (const f of all) {
+    if (_isJunk(f.name)) continue
+    const ext = _extOf(f.name)
+    if (!ext || !UPLOAD_EXTS.includes(ext)) unsupported.push(f.name)
+    else todo.push(f)
+  }
+
+  console.log(`[UPLOAD] 待传 ${todo.length} 个，不支持 ${unsupported.length} 个`)
+  const failed = []
   uploading.value = true
-  uploadTotal.value = fileList.length
+  uploadTotal.value = todo.length
   uploadDone.value = 0
-  for (const f of fileList) {
+  for (const f of todo) {
     try {
       if (!reportStore.sessionId) {
         reportStore.setSelectedDomain(domain.value)
@@ -1014,14 +1048,46 @@ async function addFiles(fileList) {
         console.log('[UPLOAD] 创建会话:', reportStore.sessionId)
       }
       const r = await reportStore.uploadFile(f)
-      console.log(`[UPLOAD] ${f.name}:`, r?.file_path || 'FAILED')
-      if (r?.file_path) files.value.push({ path: r.file_path, url: r.url || '', name: r.original_name || f.name, size: f.size || 0, ft: r.file_type || 'file', material_type: currentMaterial.value })
-      uploadDone.value++
-    } catch (e) { console.error(`[UPLOAD] ${f.name} 失败:`, e); ElMessage.error(f.name + ' 上传失败') }
+      if (r?.file_path) {
+        files.value.push({ path: r.file_path, url: r.url || '', name: r.original_name || f.name, size: f.size || 0, ft: r.file_type || 'file', material_type: currentMaterial.value })
+        uploadDone.value++
+      } else {
+        failed.push({ name: f.name, reason: '服务端未返回文件地址' })
+      }
+    } catch (e) {
+      console.error(`[UPLOAD] ${f.name} 失败:`, e)
+      failed.push({ name: f.name, reason: e?.message || '上传失败' })
+    }
   }
   uploading.value = false
-  console.log(`[UPLOAD] 完成 ${uploadDone.value}/${uploadTotal.value}`)
+  console.log(`[UPLOAD] 完成 ${uploadDone.value}/${uploadTotal.value}，失败 ${failed.length}，不支持 ${unsupported.length}`)
+  _reportUploadResult(uploadDone.value, failed, unsupported)
   checkRecognition()
+}
+
+/** 上传结束给一份「谁进来了、谁没进来、为什么」的清单（而不是静默失败） */
+function _reportUploadResult(okCount, failed, unsupported) {
+  const lines = []
+  if (okCount) lines.push(`<div style="color:#15803d"><b>✅ 成功上传 ${okCount} 个文件</b></div>`)
+  if (failed.length) {
+    const list = failed.slice(0, 8).map(x => `${x.name}（${x.reason}）`).join('<br>')
+    lines.push(`<div style="margin-top:6px;color:#b42318"><b>❌ 失败 ${failed.length} 个</b>：<br>${list}`
+      + (failed.length > 8 ? `<br>…另有 ${failed.length - 8} 个` : '') + '</div>')
+  }
+  if (unsupported.length) {
+    const list = unsupported.slice(0, 8).join('、')
+    lines.push(`<div style="margin-top:6px;color:#b45309"><b>⚠️ 不支持 ${unsupported.length} 个，未上传</b>：${list}`
+      + (unsupported.length > 8 ? ` 等 ${unsupported.length} 个` : '')
+      + '<br><span style="color:#666">只支持图片/PDF/Word/Excel/CAD(DWG、DXF)/Shapefile(.shp .shx .dbf .prj 等)/压缩包；'
+      + '其他类型请打包成 zip 再传</span></div>')
+  }
+  if (!lines.length) return
+  ElNotification({
+    title: failed.length || unsupported.length ? '上传结果：有文件没传上去' : '上传完成',
+    dangerouslyUseHTMLString: true,
+    duration: failed.length || unsupported.length ? 0 : 4000,
+    message: lines.join(''),
+  })
 }
 
 // 🔴 上传后立即核验「材料里到底认到了什么、还缺什么」。
