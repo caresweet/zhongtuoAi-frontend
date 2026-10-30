@@ -871,10 +871,16 @@ function _restoreSession() {
   try {
     const raw = localStorage.getItem(REPORT_SESSION_KEY)
     if (!raw) return
-    const { id, ts } = JSON.parse(raw) || {}
+    const { id, ts, domain: savedDomain } = JSON.parse(raw) || {}
     if (!id || !ts || Date.now() - ts > 24 * 3600 * 1000) { _forgetSession(); return }
     if (reportStore.sessionId) return          // 当前页已有会话，不覆盖
     reportStore.sessionId = id
+    // 🔴 连报告类型一起接回来：否则界面停在默认「稳评」，而会话其实是复垦，
+    //    用户一生成就被当成换了类型 → 白重置一次；反过来更糟（复用稳评会话出复垦）。
+    if (savedDomain) {
+      domain.value = savedDomain
+      reportStore.setSelectedDomain(savedDomain)
+    }
     showProgress.value = true
     workflowLogs.value = ['🔄 已接回上次的生成会话，正在同步状态...']
     _collectLogs()
@@ -896,7 +902,8 @@ const REPORT_SESSION_KEY = 'zhongtuo_report_session'
 
 function _rememberSession(id) {
   try {
-    if (id) localStorage.setItem(REPORT_SESSION_KEY, JSON.stringify({ id, ts: Date.now() }))
+    if (id) localStorage.setItem(REPORT_SESSION_KEY,
+      JSON.stringify({ id, ts: Date.now(), domain: domain.value || reportStore.selectedDomain || '' }))
   } catch { /* 隐私模式忽略 */ }
 }
 
