@@ -1021,6 +1021,8 @@ const UPLOAD_EXTS = [
 const UPLOAD_ACCEPT = UPLOAD_EXTS.map(e => '.' + e).join(',')
 // 系统/软件副产物：永远不用传，也不提示
 const JUNK_NAMES = ['thumbs.db', '.ds_store', 'desktop.ini', '.gitignore']
+// 软件自动生成的备份/临时文件（如 AutoCAD 的 .bak）—— 不用传，也不必报错
+const JUNK_EXTS = ['bak', 'tmp', 'temp', 'swp', 'db', 'ini', 'log']
 
 function _extOf(name) {
   const n = (name || '').toLowerCase()
@@ -1029,7 +1031,9 @@ function _extOf(name) {
 }
 function _isJunk(name) {
   const n = (name || '').toLowerCase().split('/').pop()
-  return JUNK_NAMES.includes(n) || n.startsWith('._')
+  if (JUNK_NAMES.includes(n) || n.startsWith('._')) return true
+  const ext = _extOf(n)
+  return JUNK_EXTS.includes(ext)
 }
 
 async function addFiles(fileList) {
@@ -1118,7 +1122,10 @@ async function checkRecognition() {
     const missLine = miss.length
       ? `<div style="margin-top:6px;color:#b45309"><b>⚠️ 材料中未识别 ${miss.length} 项</b>：`
         + miss.map(i => i.label).join('、')
-        + '<br><span style="color:#666">生成过程中会逐项询问，也可现在补传材料</span></div>'
+        + (domain.value === 'stability'
+            ? '<br><span style="color:#666">生成过程中会逐项询问，也可现在补传材料</span></div>'
+            : '<br><span style="color:#666">缺失项会在正文用规范话术处理并列入交付清单；'
+              + '关键材料建议现在补传</span></div>')
       : '<div style="margin-top:6px;color:#15803d"><b>✅ 关键信息已全部识别</b></div>'
     ElNotification({
       title: '材料识别结果',
