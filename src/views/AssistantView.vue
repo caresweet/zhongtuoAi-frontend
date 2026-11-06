@@ -22,30 +22,100 @@
         <p>上传项目资料，AI 自动编制专业报告</p>
       </header>
 
-      <!-- ⓪ 需求输入 -->
+      <!-- ⓪ 上传报告模板（替代原「输入需求」） -->
       <section class="gs">
-        <h2>⓪ 输入您的需求</h2>
+        <h2>⓪ 上传报告模板</h2>
         <div class="intent-row">
-          <input v-model="userInput" class="intent-input" placeholder="例如：生成一份土地征收社会稳定风险评估报告"
-                 @keyup.enter="analyzeIntent" :disabled="isRunning" />
-          <button class="gbtn" @click="analyzeIntent" :disabled="!userInput.trim() || isRunning">🔍 分析需求</button>
+          <input ref="tplInput" type="file" accept=".docx,.pdf,.doc" style="display:none"
+                 @change="onTemplateUpload" :disabled="isRunning" />
+          <button class="gbtn" @click="tplInput && tplInput.click()"
+                  :disabled="isRunning || templateUploading">
+            {{ templateUploading ? '⏳ 正在识别模板…' : '📄 上传报告模板' }}
+          </button>
+          <span v-if="templateName" class="intent-desc">{{ templateName }}</span>
+        </div>
+        <p class="intent-desc">上传你想要生成的报告模板（.docx / .pdf），系统自动识别报告类型、章节结构和地区模板。</p>
+        <!-- 投标模式：先选投标主体，再选招标文件；报价在解析后弹窗询问 -->
+        <div v-if="bidMode" class="intent-row" style="margin-top:8px">
+          <span class="intent-desc" style="margin:0 8px 0 0">投标主体：</span>
+          <select v-model.number="bidCompanyId" class="bid-company-select">
+            <option v-for="c in bidCompanies" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+          <button class="gbtn" @click="tplInput && tplInput.click()">选择招标文件并生成</button>
+          <button class="gbtn" @click="bidMode = false">取消</button>
         </div>
         <div v-if="intentResult" class="intent-guide">
-          <h3>📋 识别为：{{ intentResult.guide.title }}（{{ domainLabel(intentResult.domain) }}）</h3>
-          <p class="intent-desc">{{ intentResult.guide.description }}</p>
-          <p class="guide-label">必传资料：</p>
-          <ul class="guide-list">
-            <li v-for="m in intentResult.guide.required" :key="m.name">
-              <strong>{{ m.name }}</strong>（{{ m.format }}）— {{ m.note }}
-            </li>
-          </ul>
-          <template v-if="intentResult.guide.optional.length">
-            <p class="guide-label">可选资料：</p>
+          <h3>📋 识别为：{{ intentResult.domain_label || (intentResult.guide && intentResult.guide.title) }}（{{ domainLabel(intentResult.domain) }}）</h3>
+          <p v-if="intentResult.template_title" class="intent-desc">模板标题：{{ intentResult.template_title }}</p>
+          <p v-if="intentResult.detected_region" class="intent-desc">
+            识别地区：{{ intentResult.detected_region }}
+            <span v-if="intentResult.registered_template">（已登记为该地区模板）</span>
+            <span v-else-if="intentResult.register_reason">（{{ intentResult.register_reason }}）</span>
+          </p>
+          <p v-if="intentResult.matched_template" class="intent-desc">
+            参考模板库：{{ intentResult.matched_template.name }}
+            <span v-if="intentResult.matched_template.region">（{{ intentResult.matched_template.region }}）</span>
+          </p>
+          <!-- 模板分析结果：要换哪些数据、哪些小节要按本项目资料重写 -->
+          <p v-if="intentResult.structure_check && (intentResult.structure_check.missing || []).length" class="intent-desc">
+            模板未覆盖第 {{ intentResult.structure_check.missing.join('、') }} 章{{ intentResult.structure_check.standard ? '（按' + intentResult.structure_check.standard + '兜底）' : '' }}，生成时补齐；模板已有章节仍以模板为准。
+          </p>
+          <p v-if="intentResult.structure_check && (intentResult.structure_check.missing_parts || []).length" class="intent-desc">
+            模板未含第 {{ intentResult.structure_check.missing_parts.join('、') }} 部分（报告表 / 请示 / 图件 / 附件），生成时由系统自动补。
+          </p>
+          <template v-if="(intentResult.required_data || []).length">
+            <p class="guide-label">模板需要替换的数据（括号内为模板原值，成稿一律换成本项目资料）：</p>
             <ul class="guide-list">
-              <li v-for="m in intentResult.guide.optional" :key="m.name">
+              <li v-for="d in intentResult.required_data" :key="d.key">
+                <strong>{{ d.label }}</strong>
+                <span v-if="(d.examples || []).length">（模板原值：{{ d.examples.join(' / ') }}）</span>
+                <span v-if="(d.sections || []).length"> — {{ d.sections.slice(0, 2).join('、') }}</span>
+              </li>
+            </ul>
+          </template>
+          <p v-if="(intentResult.rewrite_sections || []).length" class="intent-desc">
+            需要按本项目资料重写的小节：{{ intentResult.rewrite_sections.length }} 处
+            （{{ intentResult.rewrite_sections.slice(0, 4).map(s => (s.no || '') + ' ' + s.title).join('、') }} 等）
+          </p>
+          <!-- 逐节批注式分析（不变/换数/重写 + 来源/公式），供编制人员确认 -->
+          <template v-if="intentResult.case_analysis && (intentResult.case_analysis.sections || []).length">
+            <p class="intent-desc">
+              逐节批注分析：{{ intentResult.case_analysis.section_count }} 节
+              （不变 {{ intentResult.case_analysis.counts.fixed || 0 }}、换数 {{ intentResult.case_analysis.counts.slot || 0 }}、重写 {{ intentResult.case_analysis.counts.create || 0 }}）
+              <a href="#" @click.prevent="showCase = !showCase">{{ showCase ? '收起' : '展开查看' }}</a>
+            </p>
+            <div v-if="showCase" class="case-list">
+              <div v-for="s in intentResult.case_analysis.sections" :key="(s.no || '') + s.title" class="case-item">
+                <div class="case-head">
+                  <strong>{{ s.no }} {{ s.title }}</strong>
+                  <span class="case-kind">{{ s.kind }}</span>
+                </div>
+                <div v-if="s.replace" class="intent-desc">换：{{ s.replace }}</div>
+                <div v-if="s.source" class="intent-desc">取：{{ s.source }}</div>
+                <div v-if="s.formula" class="intent-desc">口径：{{ s.formula }}</div>
+                <div v-if="(s.keys || []).length" class="intent-desc">数据位：{{ s.keys.join('、') }}</div>
+              </div>
+            </div>
+          </template>
+          <p v-if="styleText(intentResult.style_profile)" class="intent-desc">
+            版式识别：{{ styleText(intentResult.style_profile) }}
+          </p>
+          <template v-if="intentResult.guide && intentResult.guide.description">
+            <p class="intent-desc">{{ intentResult.guide.description }}</p>
+            <p class="guide-label">必传资料：</p>
+            <ul class="guide-list">
+              <li v-for="m in (intentResult.guide.required || [])" :key="m.name">
                 <strong>{{ m.name }}</strong>（{{ m.format }}）— {{ m.note }}
               </li>
             </ul>
+            <template v-if="(intentResult.guide.optional || []).length">
+              <p class="guide-label">可选资料：</p>
+              <ul class="guide-list">
+                <li v-for="m in intentResult.guide.optional" :key="m.name">
+                  <strong>{{ m.name }}</strong>（{{ m.format }}）— {{ m.note }}
+                </li>
+              </ul>
+            </template>
           </template>
         </div>
       </section>
@@ -72,7 +142,8 @@
         <!-- 🔴 选了非稳评类型后，把「不适用于该类型」的环节显性说明一句，
              避免用户以为功能缺失（业主 2026-10-28：「选完类型后有些内容就可以屏蔽掉」）。 -->
         <p v-if="domain === 'reclamation'" class="ghint dc-note">
-          复垦方案不需要勾选「报告人员」「选择证书」——这两步仅稳评使用（复垦的编制单位资质放在<b>附件3</b>），已隐藏。
+          复垦方案可选「报告人员」（写入报告表的主要编制人员）；「选择证书」仅稳评使用，已隐藏
+          ——复垦的编制单位资质放在<b>附件3</b>。
         </p>
       </section>
 
@@ -137,20 +208,29 @@
         </div>
       </section>
 
-      <!-- ③ 选择报告人员（稳评）：决定前置「培训证书」页与「稳评工作组人员及分工情况」 -->
-      <section class="gs" v-if="domain === 'stability'">
-        <h2>③ 选择报告人员 <span class="up-stat">已选 {{ selectedPersonnel.length }} / {{ MAX_PERSONNEL }} 人</span></h2>
-        <p class="ghint pp-hint">
+      <!-- ③ 选择报告人员：稳评 → 前置「培训证书」页与「稳评工作组人员及分工情况」；
+               复垦 → 第11部分报告表「方案编制单位·主要编制人员」 -->
+      <section class="gs" v-if="domain === 'stability' || domain === 'reclamation'">
+        <h2>③ 选择报告人员 <span class="up-stat">已选 {{ selectedPersonnel.length }} / {{ maxPersonnel }} 人</span></h2>
+        <p class="ghint pp-hint" v-if="domain === 'stability'">
           勾选的人员将写入报告前置的<b>稳评工作组人员及分工情况</b>。
           <b>默认只列持「稳评培训证书」者</b>（库内 17 人，证书扫描件为证）；
           名册上没证书的几位可取消勾选「只看持证人员」查看。
-          <b>最多 {{ MAX_PERSONNEL }} 人</b> —— 参照人工成品案卷为 6 人、洪泽/金湖模板为 6～7 人。
+          <b>最多 {{ maxPersonnel }} 人</b> —— 参照人工成品案卷为 6 人、洪泽/金湖模板为 6～7 人。
+        </p>
+        <p class="ghint pp-hint" v-else>
+          勾选的人员将写入<b>《土地复垦方案报告表》「方案编制单位 · 主要编制人员」</b>一栏
+          （姓名｜职称/职务｜专业｜单位）。
+          <b>只列职称/职务和专业都齐全的人员</b>（范文里核对到的就是 3 人），
+          <b>最多 {{ maxPersonnel }} 人</b>。
         </p>
         <div class="pp-tools">
           <label class="pp-tool"><input type="checkbox" :checked="allSelected" @change="toggleAllPersonnel"> 全选</label>
-          <label class="pp-tool"><input type="checkbox" v-model="onlyCertPersonnel"> 只看持证人员</label>
-          <label class="pp-tool"><input type="checkbox" :checked="!onlyCertPersonnel"
-                                        @change="toggleNonCert"> 含未持证人员</label>
+          <template v-if="domain === 'stability'">
+            <label class="pp-tool"><input type="checkbox" v-model="onlyCertPersonnel"> 只看持证人员</label>
+            <label class="pp-tool"><input type="checkbox" :checked="!onlyCertPersonnel"
+                                          @change="toggleNonCert"> 含未持证人员</label>
+          </template>
           <button class="ubtn" @click="loadPersonnel" :disabled="personnelLoading">🔄 刷新名单</button>
           <button class="ubtn" @click="buildCertIndex" :disabled="certBuilding">
             {{ certBuilding ? '⏳ 识别中…' : '🔍 识别证书素材' }}
@@ -171,7 +251,10 @@
           </label>
         </div>
         <p v-else class="ghint">
-          {{ personnelLoading ? '正在读取在职人员…' : '未读取到在职人员信息（请先在知识库维护「公司专业技术人员配备」）' }}
+          {{ personnelLoading ? '正在读取在职人员…'
+            : (domain === 'reclamation'
+                ? '人员库里还没有「职称/职务 + 专业」齐全的人员，请先导入人员统计表或补全人员库'
+                : '未读取到在职人员信息（请先在知识库维护「公司专业技术人员配备」）') }}
         </p>
       </section>
 
@@ -441,9 +524,34 @@ const domain = ref('stability')
 // 域 → 中文简称（识别结果横幅用；以前只有「稳评/投标」两分支，复垦会被错标成投标）
 const DOMAIN_NAMES = { stability: '稳评', reclamation: '复垦', bidding: '投标' }
 function domainLabel(d) { return DOMAIN_NAMES[d] || '稳评' }
+// 模板版面识别结果 → 一行可读文字（字体 + 字号）
+function _slotText(label, s) {
+  if (!s || !s.font) return ''
+  return `${label} ${s.font}${s.size ? s.size + 'pt' : ''}`
+}
+function styleText(p) {
+  if (!p) return ''
+  const t = p.table || {}
+  let table = _slotText('表格', t)
+  const b = p.table_border
+  if (b && table) {
+    const border = b.none ? '无框线'
+      : `${b.size_pt || ''}${b.size_pt ? 'pt' : ''}${b.inside ? ' 全框线' : ' 仅外框线'}`
+    table += `（${border.trim()}）`
+  }
+  return [
+    _slotText('一级标题', p.h1), _slotText('二级标题', p.h2),
+    _slotText('正文', p.body), table,
+    _slotText('表题', p.caption),
+  ].filter(Boolean).join(' / ')
+}
 const files = ref([])
-const userInput = ref('')
+const tplInput = ref(null)
+const templateUploading = ref(false)
+const templateName = ref('')
+const templatePath = ref('')
 const intentResult = ref(null)
+const showCase = ref(false)
 
 // 🔴 人工复核状态（Skill 审核发现问题、AI 重试耗尽后由前端介入）
 const pendingHumanChapters = ref(false)   // 是否处于人工复核暂停
@@ -456,36 +564,105 @@ const humanDone = reactive({})            // chapter -> 已处理标记
 const humanBusy = reactive({})            // chapter -> 提交中
 const humanProcessing = ref(false)        // 触发重写/继续生成中
 
-async function analyzeIntent() {
-  if (!userInput.value.trim()) return
+async function onTemplateUpload(e) {
+  const f = e && e.target && e.target.files ? e.target.files[0] : null
+  if (!f) return
+  // 投标模式或文件名带「招标」→ 走招标文件解析 + 报价 + 生成投标文件
+  if (bidMode.value || /招标/.test(f.name)) {
+    if (e && e.target) e.target.value = ''
+    await onBidTenderUpload(f)
+    return
+  }
+  const fd = new FormData()
+  fd.append('file', f)
+  templateUploading.value = true
   try {
-    const res = await authFetch('/api/v1/reports/analyze-intent', {
+    const res = await authFetch('/api/v1/reports/analyze-template', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_input: userInput.value }),
+      body: fd,
     })
-    const data = await res.json()
+    let data = null
+    try { data = await res.json() } catch (_) { data = null }
+    if (!res.ok) {
+      let detail = data && (data.detail || data.message)
+      if (Array.isArray(detail)) detail = detail.map(x => x.msg || x).join('；')
+      throw new Error(detail || `HTTP ${res.status}`)
+    }
     if (data && data.data) {
       intentResult.value = data.data
+      showCase.value = false
       domain.value = data.data.domain
-      ElMessage.success('需求分析完成，请按引导上传资料')
+      templatePath.value = data.data.template_path || ''
+      templateName.value = f.name
+      ElMessage.success(`模板识别完成：${data.data.domain_label || domainLabel(data.data.domain)}${data.data.detected_region ? '，地区 ' + data.data.detected_region : ''}`)
+    } else {
+      ElMessage.error((data && data.message) || '模板识别失败')
     }
-  } catch (e) {
-    ElMessage.error('需求分析失败：' + e.message)
+  } catch (e2) {
+    ElMessage.error('模板识别失败：' + e2.message)
+  } finally {
+    templateUploading.value = false
+    if (e && e.target) e.target.value = ''
   }
 }
 const showProgress = ref(false)
 
-// 🔴 投标文件模块尚未开放 —— 点卡片只弹提示，不切换报告类型
-function onBiddingClick() {
-  domain.value = 'stability'
-  ElMessageBox.alert(
-    '📋 投标文件编写功能正在开发中，暂未开放。\n\n'
-    + '目前已支持《社会稳定风险评估报告》全流程智能生成，可直接开始；'
-    + '投标文件模块上线后会在首页第一时间通知您。',
-    '功能开发中',
-    { confirmButtonText: '知道了', type: 'info' },
-  ).catch(() => {})
+// 投标文件：点卡片 → 选招标文件 → 解析 → 弹窗问报价 → 生成
+const bidMode = ref(false)
+const bidTender = ref(null)
+const bidCompanies = ref([])
+const bidCompanyId = ref(4)
+
+async function onBiddingClick() {
+  bidMode.value = true
+  try {
+    const res = await authFetch('/api/v1/company/issuer-candidates')
+    const data = await res.json()
+    const list = (data && data.data && data.data.companies) || []
+    bidCompanies.value = list.length ? list : [{ id: 4, name: '江苏众拓测绘有限公司' }]
+    const cehui = bidCompanies.value.find(c => (c.name || '').includes('测绘'))
+    bidCompanyId.value = cehui ? cehui.id : bidCompanies.value[0].id
+  } catch (_) {
+    bidCompanies.value = [{ id: 4, name: '江苏众拓测绘有限公司' }]
+    bidCompanyId.value = 4
+  }
+}
+
+async function onBidTenderUpload(f) {
+  try {
+    const fd = new FormData()
+    fd.append('file', f)
+    fd.append('company_id', String(bidCompanyId.value))
+    const res = await authFetch('/api/v1/bidding/bid/analyze-tender', { method: 'POST', body: fd })
+    const data = await res.json()
+    if (!res.ok) throw new Error((data && (data.detail || data.message)) || `HTTP ${res.status}`)
+    bidTender.value = data.data
+    const req = data.data.requirements || {}
+    ElMessage.success(`已识别：${req.project_name || f.name}`)
+    const p = await ElMessageBox.prompt(
+      `本项目预算/最高限价：${data.data.max_price_wan || '未识别'} 万元\n请填写本次投标报价（万元）`,
+      '填写投标报价',
+      { inputValue: data.data.max_price_wan || '', inputPattern: /^\d+(\.\d+)?$/,
+        inputErrorMessage: '请输入数字（万元）', confirmButtonText: '生成投标文件' },
+    )
+    const price = Number(p.value)
+    if (!price || price <= 0) throw new Error('报价无效')
+    ElMessage.info('正在按招标文件格式生成投标文件，服务方案由 AI 编写，请稍候…')
+    const gen = await authFetch('/api/v1/bidding/bid/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tender_path: data.data.tender_path, company_id: bidCompanyId.value, price_wan: price }),
+    })
+    const gd = await gen.json()
+    if (!gen.ok) throw new Error((gd && (gd.detail || gd.message)) || `HTTP ${gen.status}`)
+    await ElMessageBox.alert(`投标文件已生成：${gd.data.file_name}`, '生成完成', {
+      confirmButtonText: '下载', type: 'success',
+    }).catch(() => {})
+    window.open(gd.data.download_url, '_blank')
+  } catch (e2) {
+    if (e2 !== 'cancel' && e2 !== 'close') ElMessage.error('投标文件生成失败：' + (e2.message || e2))
+  } finally {
+    bidMode.value = false
+  }
 }
 const uploading = ref(false)
 const uploadTotal = ref(0)
@@ -516,7 +693,14 @@ const curField = computed(() => missingFields.value[curIdx.value] || null)
 function isLongTextField(f) {
   if (!f) return false
   if (f.type && f.type !== 'text') return false
-  return (f.maxlength || 0) > 30 || String(f.current || '').length > 30
+  // 缺口核对：`current` 是 AI 拟的一整句，天然要大框
+  if (String(f.key || '').startsWith('_gap_')) return true
+  // 🔴 以前拿 `maxlength > 30` 当“长文本”判据 —— 文号（maxlength 40）、
+  //    项目名称（60）、单位地址（80）全被塞进 textarea，业主反馈「输入框全变大了」。
+  //    字数上限只是校验约束，不代表内容长。现在只有**明确的长文本**：
+  //    上限 ≥100 字（公告原文/情况说明这类），或预填值本身就超过一行。
+  if ((f.maxlength || 0) >= 100) return true
+  return String(f.current || '').length > 30
 }
 
 // 「下一项」：先校验当前项，不过就停在原地（避免用户带着错值一路点到底）
@@ -603,8 +787,40 @@ const onlyCertPersonnel = ref(true)
 //    想看名册上没证书的那几位，取消勾选「只看持证人员」即可。
 function toggleNonCert(e) { onlyCertPersonnel.value = !e.target.checked }
 
-const visiblePersonnel = computed(() =>
-  onlyCertPersonnel.value ? personnel.value.filter(p => p.has_wenshen_cert) : personnel.value)
+const visiblePersonnel = computed(() => {
+  // 🔴 复垦报告表「主要编制人员」只收**职称/职务 + 专业都齐全**的人 ——
+  //    范文里能核对到的就是这 3 人（陈春/林叶青/刘利伟）；
+  //    人员库里只有姓名、没有职称专业的（历史证书扫描件入库的那些）不列，
+  //    否则会被选进报告表、印出一排「待补充」。
+  if (domain.value === 'reclamation') {
+    return personnel.value.filter(
+      p => String(p.title || '').trim() && String(p.major || '').trim())
+  }
+  return !onlyCertPersonnel.value
+    ? personnel.value
+    : personnel.value.filter(p => p.has_wenshen_cert)
+})
+// 复垦：范文报告表就是 3 行 → 最多选 3 人；稳评仍按参照件 7 人。
+const RECLAMATION_MAX_PERSONNEL = 3
+const maxPersonnel = computed(() =>
+  domain.value === 'reclamation' ? RECLAMATION_MAX_PERSONNEL : MAX_PERSONNEL)
+
+function defaultPersonnelSelection() {
+  if (domain.value === 'reclamation') {
+    // 范文报告表就是这三位（陈春/林叶青/刘利伟）—— 有就默认勾上，不够再按名单补
+    const preferred = ['陈春', '林叶青', '刘利伟']
+    const picked = preferred
+      .map(n => visiblePersonnel.value.find(p => p.name === n))
+      .filter(Boolean)
+    for (const p of visiblePersonnel.value) {
+      if (picked.length >= RECLAMATION_MAX_PERSONNEL) break
+      if (!picked.includes(p)) picked.push(p)
+    }
+    return picked.slice(0, RECLAMATION_MAX_PERSONNEL).map(p => p.name)
+  }
+  const certs = personnel.value.filter(p => p.has_wenshen_cert).map(p => p.name)
+  return (certs.length ? certs : personnel.value.map(p => p.name)).slice(0, MAX_PERSONNEL)
+}
 const allSelected = computed(() =>
   visiblePersonnel.value.length > 0 && visiblePersonnel.value.every(p => selectedPersonnel.value.includes(p.name)))
 
@@ -616,10 +832,8 @@ async function loadPersonnel() {
     const list = (data && data.data && data.data.personnel) || []
     if (!list.length) ElMessage.warning('人员库为空，请点「同步人员库」从名册与素材图导入')
     personnel.value = list
-    // 🔴 默认勾选持稳评培训证书者，但**不超过 MAX_PERSONNEL 人** ——
-    //    库里持证者常有十几位，全勾进去就偏离参照件体例了（6～7 人）。
-    const certs = list.filter(p => p.has_wenshen_cert).map(p => p.name)
-    selectedPersonnel.value = (certs.length ? certs : list.map(p => p.name)).slice(0, MAX_PERSONNEL)
+    // 🔴 默认勾选：稳评 = 持证者（不超过 7 人）；复垦 = 职称/专业齐全者（不超过 3 人）
+    selectedPersonnel.value = defaultPersonnelSelection()
     // 🔴 证书候选 = 有证书扫描件的人；优先默认勾「工作组里也有证书的」，最多 MAX_CERT_PERSONNEL
     const withCert = list.filter(p => (p.cert_image_count || 0) > 0).map(p => p.name)
     const prefer = selectedPersonnel.value.filter(n => withCert.includes(n))
@@ -688,8 +902,10 @@ const MAX_PERSONNEL = 7
 function togglePersonnel(name) {
   const i = selectedPersonnel.value.indexOf(name)
   if (i >= 0) { selectedPersonnel.value.splice(i, 1); return }
-  if (selectedPersonnel.value.length >= MAX_PERSONNEL) {
-    ElMessage.warning(`稳评工作组一般不超过 ${MAX_PERSONNEL} 人（参照件为 6～7 人），请先取消一位`)
+  if (selectedPersonnel.value.length >= maxPersonnel.value) {
+    ElMessage.warning(domain.value === 'reclamation'
+      ? `主要编制人员最多 ${maxPersonnel.value} 人（范文报告表为 3 行），请先取消一位`
+      : `稳评工作组一般不超过 ${maxPersonnel.value} 人（参照件为 6～7 人），请先取消一位`)
     return
   }
   selectedPersonnel.value.push(name)
@@ -698,9 +914,9 @@ function togglePersonnel(name) {
 function toggleAllPersonnel(e) {
   if (!e.target.checked) { selectedPersonnel.value = []; return }
   const all = visiblePersonnel.value.map(p => p.name)
-  selectedPersonnel.value = all.slice(0, MAX_PERSONNEL)
-  if (all.length > MAX_PERSONNEL) {
-    ElMessage.info(`已选前 ${MAX_PERSONNEL} 人（上限），其余请逐位替换`)
+  selectedPersonnel.value = all.slice(0, maxPersonnel.value)
+  if (all.length > maxPersonnel.value) {
+    ElMessage.info(`已选前 ${maxPersonnel.value} 人（上限），其余请逐位替换`)
   }
 }
 
@@ -710,10 +926,19 @@ const MAX_CERT_PERSONNEL = 3
 const selectedCertPersonnel = ref([])
 // 🔴 切到非稳评类型时清空「报告人员 / 选择证书」——这两步只对稳评有意义，
 //    留着旧选择会随工作流一起提交（后端会拿去贴稳评工作组名单/证书图）。
+// 🔴 「选择证书」只对稳评有意义（贴前置的个人培训证书图）—— 切到别的类型就清空；
+//    但「报告人员」复垦也要用（报告表的主要编制人员），只有投标不用，才算清空。
 watch(domain, (d) => {
   if (d !== 'stability') {
-    selectedPersonnel.value = []
     selectedCertPersonnel.value = []
+  }
+  if (d === 'bidding') {
+    selectedPersonnel.value = []
+  } else if (d === 'reclamation') {
+    // 复垦只列职称/专业齐全的人，默认选前 3 位
+    selectedPersonnel.value = defaultPersonnelSelection()
+  } else if (d === 'stability') {
+    selectedPersonnel.value = defaultPersonnelSelection()
   }
 })
 const certCandidates = computed(() =>
@@ -1056,7 +1281,7 @@ async function addFiles(fileList) {
       if (!reportStore.sessionId) {
         reportStore.setSelectedDomain(domain.value)
         // startGeneration(initialMessage, tplId, tplName, intent, domain)
-        await reportStore.startGeneration('生成报告', 0, '默认模板', domain.value, domain.value)
+        await reportStore.startGeneration('生成报告', 0, '默认模板', domain.value, domain.value, templatePath.value)
         console.log('[UPLOAD] 创建会话:', reportStore.sessionId, '域:', domain.value)
       }
       const r = await reportStore.uploadFile(f)
@@ -1152,11 +1377,14 @@ async function startGenerate() {
     if (!reportStore.sessionId) {
       reportStore.setSelectedDomain(domain.value)
       // startGeneration(initialMessage, tplId, tplName, intent, domain) —— 后两个才是「域」
-      await reportStore.startGeneration('生成报告', 0, '默认模板', domain.value, domain.value)
+      await reportStore.startGeneration('生成报告', 0, '默认模板', domain.value, domain.value, templatePath.value)
     }
     // 🔴 Use LangGraph workflow for generation (with progress bar)
     console.log('[GENERATE] 启动工作流, session:', reportStore.sessionId, '域:', domain.value)
-    await reportStore.generateWithWorkflow('', domain.value === 'stability' ? selectedPersonnel.value : [],
+    // 🔴 报告人员：稳评（工作组名单）与复垦（报告表主要编制人员）都用；
+    //    证书图只有稳评前置页需要。
+    await reportStore.generateWithWorkflow('',
+      (domain.value === 'stability' || domain.value === 'reclamation') ? selectedPersonnel.value : [],
       domain.value === 'stability' ? selectedCertPersonnel.value : [], domain.value)
     _rememberSession(reportStore.sessionId)
     console.log('[GENERATE] 工作流已启动, 开始轮询日志')
@@ -1397,6 +1625,13 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .intent-guide { background: #f0f7ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px; }
 .intent-guide h3 { font-size: 14px; margin: 0 0 6px; color: #1e40af; }
 .intent-desc { font-size: 13px; color: #4b5563; margin: 0 0 10px; }
+.case-list { max-height: 420px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; margin: 0 0 12px; background: #fafafa; }
+.case-item { padding: 6px 0; border-bottom: 1px dashed #e5e7eb; }
+.case-item:last-child { border-bottom: none; }
+.case-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+.case-kind { font-size: 12px; color: #2563eb; background: #eff6ff; border-radius: 4px; padding: 1px 6px; }
+.case-item .intent-desc { margin: 2px 0; font-size: 12px; }
+.bid-company-select { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; margin-right: 8px; }
 .guide-label { font-size: 13px; font-weight: 600; color: #374151; margin: 10px 0 6px; }
 .guide-list { list-style: none; padding: 0; margin: 0; }
 .guide-list li { font-size: 13px; color: #374151; padding: 4px 0; }

@@ -283,7 +283,7 @@ export const useReportStore = defineStore('report', () => {
    * Start a new report generation session.
    * @param {string} initialMessage - User's project description.
    */
-  async function startGeneration(initialMessage, tplId, tplName, intent = '', domain = '') {
+  async function startGeneration(initialMessage, tplId, tplName, intent = '', domain = '', templatePath = '') {
     resetState()
     selectedDomain.value = domain || intent || selectedDomain.value || ''
     phase.value = 'setup'
@@ -292,7 +292,7 @@ export const useReportStore = defineStore('report', () => {
     templateName.value = tplName || '默认模板'
 
     try {
-      const res = await api.startGeneration(templateId.value, initialMessage, intent, selectedDomain.value)
+      const res = await api.startGeneration(templateId.value, initialMessage, intent, selectedDomain.value, templatePath)
       const data = res.data
 
       sessionId.value = data.session_id

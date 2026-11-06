@@ -6,8 +6,11 @@ import client from './client'
 //    后端一开鉴权它们全部 401，而且没有任何一处会跳登录。
 export function authFetch(url, options = {}) {
   const token = localStorage.getItem('zhongtuo_token')
+  // 🔴 FormData 上传**不能**手工设 Content-Type：浏览器要自己带 multipart boundary，
+  //    写成 application/json 会让 FastAPI 解析失败（模板上传弹「模板分析失败」的根因）。
+  const _isForm = typeof FormData !== 'undefined' && options.body instanceof FormData
   const headers = {
-    'Content-Type': 'application/json',
+    ...(_isForm ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers || {}),
   }
   if (token) {
@@ -27,12 +30,13 @@ export function authFetch(url, options = {}) {
 }
 
 // Start generation session
-export function startGeneration(templateId, initialMessage, intent = '', domain = '') {
+export function startGeneration(templateId, initialMessage, intent = '', domain = '', templatePath = '') {
   return client.post('/reports/generate/start', {
     template_id: templateId || 0,
     initial_message: initialMessage,
     intent: intent || '',
     domain: domain || intent || '',
+    template_path: templatePath || '',
   })
 }
 
