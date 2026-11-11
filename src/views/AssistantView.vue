@@ -647,10 +647,18 @@ async function onBidTenderUpload(f) {
     )
     const price = Number(p.value)
     if (!price || price <= 0) throw new Error('报价无效')
+    // 法定代表人固定取公司档案；被授权人（授权代表）每次问一次
+    const ag = await ElMessageBox.prompt(
+      `法定代表人：${data.data.legal_name || '（公司档案）'}（固定，不用填）\n请填写本项目被授权人（授权代表）姓名`,
+      '授权代表',
+      { inputValue: data.data.agent_name || '', inputPlaceholder: '被授权人姓名',
+        confirmButtonText: '生成投标文件' },
+    )
+    const agent = String(ag.value || '').trim()
     ElMessage.info('正在按招标文件格式生成投标文件，服务方案由 AI 编写，请稍候…')
     const gen = await authFetch('/api/v1/bidding/bid/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tender_path: data.data.tender_path, company_id: bidCompanyId.value, price_wan: price }),
+      body: JSON.stringify({ tender_path: data.data.tender_path, company_id: bidCompanyId.value, price_wan: price, agent_name: agent }),
     })
     const gd = await gen.json()
     if (!gen.ok) throw new Error((gd && (gd.detail || gd.message)) || `HTTP ${gen.status}`)
