@@ -637,6 +637,11 @@ async function onBidTenderUpload(f) {
     const data = await res.json()
     if (!res.ok) throw new Error((data && (data.detail || data.message)) || `HTTP ${res.status}`)
     bidTender.value = data.data
+    if (data.data.company_ready === false) {
+      ElMessage.warning(
+        `该公司人员库/档案资料还不完整（人员 ${data.data.company_personnel_count || 0} 人、` +
+        `档案 ${data.data.company_asset_count || 0} 份），生成的文件会缺项，请先在知识库补齐`)
+    }
     const req = data.data.requirements || {}
     ElMessage.success(`已识别：${req.project_name || f.name}`)
     const p = await ElMessageBox.prompt(
