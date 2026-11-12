@@ -326,7 +326,7 @@ export const useReportStore = defineStore('report', () => {
 
   /**
    * Shared SSE stream reader — parses event: + data: lines from a ReadableStream.
-   * Avoids duplicating the buffer/decoder/parser logic across sendMessage/generateReport.
+   * Avoids duplicating the buffer/decoder/parser logic across chat streaming calls.
    */
   async function _readSSEStream(response, signal) {
     const reader = response.body.getReader()
@@ -1500,53 +1500,6 @@ export const useReportStore = defineStore('report', () => {
     })
   }
 
-  /** Direct generation — upload files then generate, no chat. */
-  async function generateReport() {
-    if (!sessionId.value) throw new Error('请先创建会话')
-    if (_abortController) { _abortController.abort(); _abortController = null }
-    _abortController = new AbortController()
-
-    isStreaming.value = true
-    streamingContent.value = ''
-    thinkingLog.value = []
-    phase.value = 'generating'
-    status.value = 'generating'
-    statusMessage.value = '正在启动生成...'
-    // Init progress steps so UI shows pipeline structure immediately
-    progressSteps.value = [
-      { key: 'analysis', label: '分析资料', elapsed: 0, done: false, active: true },
-      { key: 'outline', label: '生成大纲', elapsed: 0, done: false },
-      { key: 'generation', label: '逐章生成', elapsed: 0, done: false },
-      { key: 'quality', label: '质量审核', elapsed: 0, done: false },
-      { key: 'assembly', label: '组装报告', elapsed: 0, done: false },
-    ]
-
-    try {
-      const response = await api.generateReport(sessionId.value, _abortController?.signal)
-      if (!response.ok) {
-        let detail = ''
-        try { const err = await response.json(); detail = err.detail || '' } catch {}
-        throw new Error(detail || `服务器错误 (${response.status})`)
-      }
-
-      await _readSSEStream(response, _abortController?.signal)
-    } catch (e) {
-      if (e.name !== 'AbortError') {
-        error.value = e.message || '生成失败'
-        phase.value = 'idle'
-        status.value = 'error'
-        messages.value.push({
-          id: _nextMsgId(), role: 'system',
-          content: `❌ 生成失败: ${error.value}`,
-          messageType: 'error', timestamp: new Date().toISOString(),
-        })
-      }
-    } finally {
-      isStreaming.value = false
-      streamingContent.value = ''
-    }
-  }
-
   function resetState() {
     // 🔴 Abort in-flight SSE request
     if (_abortController) { _abortController.abort(); _abortController = null }
@@ -1605,7 +1558,6 @@ export const useReportStore = defineStore('report', () => {
     approveOutline, reviseOutline,
     skipChapter, assembleReport, uploadFile, fetchQualityReport, fetchFieldAnalysis,
     cancelGeneration, resetState, submitSectionAnswers, skipSection,
-    generateReport,
     // Workflow API
     generateWithWorkflow, resumeWorkflow, cancelWorkflow,
     workflowRunning, workflowPaused, workflowMissingFields, workflowProgress,

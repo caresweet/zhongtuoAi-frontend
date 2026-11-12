@@ -67,14 +67,6 @@ export function sendChatMessage(sessionId, message, attachments, currentStep = n
   })
 }
 
-// Direct generation — no chat, upload files then call this
-export function generateReport(sessionId, signal) {
-  return authFetch(`/api/v1/reports/generate/${sessionId}/generate`, {
-    method: 'POST',
-    signal,
-  })
-}
-
 // Get generation status
 export function getGenerationStatus(sessionId) {
   return client.get(`/reports/generate/${sessionId}/status`)
