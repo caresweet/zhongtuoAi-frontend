@@ -41,6 +41,7 @@
           <select v-model.number="bidCompanyId" class="bid-company-select">
             <option v-for="c in bidCompanies" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
+          <span class="intent-desc" style="margin:0 8px 0 4px">（按此公司出件，可切换）</span>
           <button class="gbtn" @click="tplInput && tplInput.click()">选择招标文件并生成</button>
           <button class="gbtn" @click="bidMode = false">取消</button>
         </div>
@@ -645,11 +646,18 @@ async function onBidTenderUpload(f) {
     }
     const req = data.data.requirements || {}
     ElMessage.success(`已识别：${req.project_name || f.name}`)
+    // 投标主体以页面上选择的下拉框为准（内部账号可在本公司各机构间切换）
+    const _coName = (bidCompanies.value.find(c => c.id === bidCompanyId.value) || {}).name
+      || data.data.company_name || '本公司'
+    const _hint = data.data.price_hint
+      || `本项目预算/最高限价：${data.data.max_price_wan || '未识别'} 万元`
+    const _suggested = data.data.suggested_price_wan ?? data.data.max_price_wan ?? ''
     const p = await ElMessageBox.prompt(
-      `本项目预算/最高限价：${data.data.max_price_wan || '未识别'} 万元\n请填写本次投标报价（万元）`,
+      `投标主体：${_coName}\n项目：${req.project_name || f.name}\n\n${_hint}\n\n` +
+      '请填写本次投标报价（万元），可直接采用建议价或自行修改',
       '填写投标报价',
-      { inputValue: data.data.max_price_wan || '', inputPattern: /^\d+(\.\d+)?$/,
-        inputErrorMessage: '请输入数字（万元）', confirmButtonText: '生成投标文件' },
+      { inputValue: String(_suggested), inputPattern: /^\d+(\.\d+)?$/,
+        inputErrorMessage: '请输入数字（万元）', confirmButtonText: '下一步：授权代表' },
     )
     const price = Number(p.value)
     if (!price || price <= 0) throw new Error('报价无效')
