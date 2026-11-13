@@ -567,8 +567,9 @@ const humanProcessing = ref(false)        // 触发重写/继续生成中
 async function onTemplateUpload(e) {
   const f = e && e.target && e.target.files ? e.target.files[0] : null
   if (!f) return
-  // 投标模式或文件名带「招标」→ 走招标文件解析 + 报价 + 生成投标文件
-  if (bidMode.value || /招标/.test(f.name)) {
+  // 投标模式或文件名带招标/询比/投选/磋商等字样 → 走招标文件解析 + 报价 + 生成投标文件
+  // （询比文件叫「投选文件」，文件名里通常没有「招标」二字，不能只认「招标」）
+  if (bidMode.value || /招标|询比|投选|磋商|比选|采购文件/.test(f.name)) {
     if (e && e.target) e.target.value = ''
     await onBidTenderUpload(f)
     return
