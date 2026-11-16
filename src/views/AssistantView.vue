@@ -321,7 +321,7 @@
         <!-- 交付体检 + 缺口清单：只在这里提示，不写进交付稿
              🔴 业主口径（2026-10-30）：报告生成后要达到 80% 可用率、用户只看一遍就过。
                 所以这里先报「可用率」，再列「需要扫一眼的地方」，不用翻全文找问题。 -->
-        <details v-if="phase === 'complete' && (audit || (gaps && gaps.total))" class="gap-panel">
+        <details v-if="phase === 'complete' && (audit || coverage || (gaps && gaps.total))" class="gap-panel">
           <summary>
             <template v-if="audit && audit.total">
               📋 交付体检：可用率 <b :class="{ 'audit-bad': audit.below_target }">{{ auditPct }}%</b>
@@ -330,9 +330,35 @@
             <template v-else-if="gaps && gaps.total">
               ⚠️ 本次生成有 <b>{{ gaps.total }}</b> 处「待补充 / 待核对」
             </template>
+            <span v-if="coverage && coverage.total">
+              · 要求覆盖 <b :class="{ 'audit-bad': coverage.missing_critical && coverage.missing_critical.length }">{{ coverage.covered }}/{{ coverage.total }}</b> 项
+            </span>
+            <span v-if="wordBudget && wordBudget.total_min_words">
+              · 字数 <b :class="{ 'audit-bad': wordBudget.total_ratio < 0.8 }">{{ wordBudget.total_words }}</b>/{{ wordBudget.total_min_words }}
+            </span>
             <span v-if="gaps && gaps.total"> · 缺口 <b>{{ gaps.total }}</b> 处（{{ gaps.warnings || 0 }} 处重点看）</span>
             —— 点开看明细
           </summary>
+
+          <!-- 交付闸门：不可交付时红色打头，阻断项逐条列出 -->
+          <div v-if="deliverable === false" class="deliver-block">
+            <p class="deliver-title">⛔ 本轮标记为<b>不可交付</b>（{{ blockers.length }} 项阻断）</p>
+            <ul class="gap-list">
+              <li v-for="(b, i) in blockers" :key="'b' + i" class="gap-item critical">
+                <span class="gap-kind">{{ b.kind === 'words' ? '篇幅' : '缺项' }}</span>
+                <span class="gap-detail">{{ b.message }}</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- 覆盖矩阵：缺的审查要点（含依据） -->
+          <ul v-if="coverage && coverage.missing && coverage.missing.length" class="gap-list">
+            <li v-for="(m, i) in coverage.missing" :key="'c' + i" :class="['gap-item', m.severity]">
+              <span class="gap-kind">{{ m.severity === 'critical' ? '必需要求缺失' : '建议补充' }}</span>
+              <span class="gap-detail">{{ m.name }}</span>
+              <span class="gap-sentence">依据：{{ m.basis }}<template v-if="m.expected && m.expected.length">；应在第 {{ m.expected.join('、') }} 章</template></span>
+            </li>
+          </ul>
 
           <!-- 体检清单：套话腔 / 空泛表述 / 待补充 -->
           <ul v-if="audit && audit.items && audit.items.length" class="gap-list">
@@ -699,6 +725,11 @@ const workflowLogs = ref([])
 const gaps = ref(null)
 // 交付体检（80% 可用率目标）：{ rate, total, flagged, below_target, items[] }
 const audit = ref(null)
+// 交付闸门（要求覆盖 + 字数预算）：deliverable=false 时提示「不可交付」
+const coverage = ref(null)
+const wordBudget = ref(null)
+const deliverable = ref(null)
+const blockers = ref([])
 const auditPct = computed(() => Math.round(((audit.value?.rate) || 0) * 1000) / 10)
 const logBody = ref(null)
 const missingFields = ref([])
@@ -1197,6 +1228,11 @@ watch(() => reportStore.phase, async (p) => {
       const res = await getSessionGaps(reportStore.sessionId)
       gaps.value = res?.data || null
       audit.value = res?.data?.audit || null
+      // 🔴 交付闸门：要求覆盖 + 字数预算（后端 coverage_matrix 算好的）
+      coverage.value = res?.data?.coverage || null
+      wordBudget.value = res?.data?.word_budget || null
+      deliverable.value = res?.data?.deliverable ?? null
+      blockers.value = res?.data?.blockers || []
       // 交付体检优先播报：先告诉用户「能不能直接用、要扫哪几处」
       if (audit.value?.total) {
         const pct = auditPct.value
@@ -1598,6 +1634,10 @@ function resetAll() {
   missingFields.value = []
   gaps.value = null
   audit.value = null
+  coverage.value = null
+  wordBudget.value = null
+  deliverable.value = null
+  blockers.value = []
   if (_logTimer) clearInterval(_logTimer)
   files.value = []
   _maxPct = 0
@@ -1860,6 +1900,11 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .gap-list { margin: 10px 0 0; padding: 0; list-style: none; max-height: 320px; overflow: auto; }
 .gap-item { display: flex; gap: 8px; padding: 6px 0; border-top: 1px dashed #f0d9a8; font-size: 13px; line-height: 1.6; flex-wrap: wrap; }
 .gap-item.warn .gap-detail { color: #b42318; }
+.gap-item.critical .gap-detail { color: #b42318; font-weight: 600; }
+/* 交付闸门：不可交付横幅 */
+.deliver-block { margin: 10px 0 0; padding: 8px 10px; border: 1px solid #f3b4ae; background: #fef3f2; border-radius: 6px; }
+.deliver-title { margin: 0; font-size: 13px; color: #b42318; }
+.deliver-block .gap-list { max-height: 220px; }
 .gap-kind { font-size: 12px; color: #8a5a00; background: #fff3d6; border-radius: 4px; padding: 0 6px; flex-shrink: 0; }
 .audit-bad { color: #b42318; }
 .gap-ch { flex: 0 0 auto; font-weight: 600; color: #8a5a00; }
