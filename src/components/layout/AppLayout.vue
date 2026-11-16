@@ -85,6 +85,7 @@ const _navMoreAdmin = [
   { label: '知识库管理', path: '/app/knowledge' },
   { label: '问卷校对', path: '/app/ocr-review' },
   { label: '校验中心', path: '/app/check-rules' },
+  { label: '内置技能', path: '/app/skills' },
   { label: '审批回灌', path: '/app/approval' },
   { label: '数据清洗工作台', path: '/app/cleaning-workbench' },
   { label: '账号管理', path: '/app/admin/users' },

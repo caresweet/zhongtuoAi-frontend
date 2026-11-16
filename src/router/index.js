@@ -94,6 +94,12 @@ const routes = [
         meta: { title: '校验中心', icon: 'SetUp', requiresStaff: true },
       },
       {
+        path: 'skills',
+        name: 'BuiltinSkills',
+        component: () => import('@/views/BuiltinSkills.vue'),
+        meta: { title: '内置技能', icon: 'Cpu', requiresStaff: true },
+      },
+      {
         path: 'approval',
         name: 'ApprovalIntake',
         component: () => import('@/views/ApprovalIntake.vue'),
@@ -110,6 +116,7 @@ const routes = [
   { path: '/cleaning-workbench', redirect: '/app/cleaning-workbench' },
   { path: '/ocr-review', redirect: '/app/ocr-review' },
   { path: '/check-rules', redirect: '/app/check-rules' },
+  { path: '/skills', redirect: '/app/skills' },
   { path: '/approval', redirect: '/app/approval' },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
