@@ -72,6 +72,49 @@
         </template>
         <el-empty v-else-if="!checking" description="输入报告会话ID后点击「体检」" />
       </el-tab-pane>
+
+      <!-- ═══ 政府信息核验 ═══ -->
+      <el-tab-pane label="政府信息" name="gov">
+        <el-alert type="info" :closable="false" style="margin-bottom:12px"
+          title="按项目位置识别乡镇/街道，并联网核验政府是否存在。报告生成时也会自动做这一步，不会把镇写成街道。" />
+        <div style="margin-bottom:14px">
+          <el-input v-model="govLocation" placeholder="项目位置，如：淮安市淮阴区马头镇运河里一号地块"
+            style="width:460px" @keyup.enter="resolveGov" />
+          <el-button type="primary" style="margin-left:8px" :loading="govLoading" @click="resolveGov">识别并核验</el-button>
+        </div>
+        <el-descriptions v-if="govInfo" :column="2" border style="margin-bottom:12px">
+          <el-descriptions-item label="市">{{ govInfo.city || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="区县">{{ govInfo.county || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="乡镇/街道">{{ govInfo.township || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="类型">{{ govInfo.township_type || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="政府名称">{{ govTownshipGov || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="自然资源主管部门">{{ govBureau || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="联网核验" :span="2">
+            <el-tag :type="govVerified ? 'success' : 'warning'" size="small">
+              {{ govVerified ? '已检索到政府信息' : '未检索到，按资料识别' }}
+            </el-tag>
+            <a v-for="s in govSources" :key="s" :href="s" target="_blank"
+              style="margin-left:10px">{{ s }}</a>
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <el-divider />
+        <div style="margin-bottom:10px">
+          <el-input v-model="govQuery" placeholder="直接搜索政府信息，如：马头镇人民政府"
+            style="width:360px" @keyup.enter="searchGov" />
+          <el-button style="margin-left:8px" :loading="govSearching" @click="searchGov">搜索</el-button>
+        </div>
+        <el-table v-if="govResults.length" :data="govResults" size="small" style="width:100%">
+          <el-table-column prop="title" label="标题" min-width="240" show-overflow-tooltip />
+          <el-table-column label="链接" min-width="260">
+            <template #default="{ row }">
+              <a :href="row.link" target="_blank">{{ row.link }}</a>
+            </template>
+          </el-table-column>
+          <el-table-column prop="snippet" label="摘要" min-width="300" show-overflow-tooltip />
+        </el-table>
+        <el-empty v-else-if="govSearched && !govSearching" description="没有检索到结果" />
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -87,6 +130,18 @@ const loading = ref(false)
 const sessionId = ref('')
 const checkResult = ref(null)
 const checking = ref(false)
+
+const govLocation = ref('')
+const govLoading = ref(false)
+const govInfo = ref(null)
+const govTownshipGov = ref('')
+const govBureau = ref('')
+const govVerified = ref(false)
+const govSources = ref([])
+const govQuery = ref('')
+const govSearching = ref(false)
+const govSearched = ref(false)
+const govResults = ref([])
 
 onMounted(load)
 
@@ -135,5 +190,37 @@ async function runCheck() {
     checkResult.value = data.data || {}
   } catch (e) { ElMessage.error(e.response?.data?.detail || '体检失败') }
   finally { checking.value = false }
+}
+
+async function resolveGov() {
+  if (!govLocation.value.trim()) return ElMessage.warning('请输入项目位置')
+  govLoading.value = true
+  try {
+    const { data } = await client.get('/reports/admin-division/resolve', {
+      params: { location: govLocation.value.trim() },
+    })
+    const d = data.data || {}
+    govInfo.value = d.division || {}
+    govTownshipGov.value = d.township_gov || ''
+    govBureau.value = d.natural_resources_bureau || ''
+    govVerified.value = !!d.verified
+    govSources.value = d.sources || []
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '识别失败')
+  } finally { govLoading.value = false }
+}
+
+async function searchGov() {
+  if (!govQuery.value.trim()) return ElMessage.warning('请输入要搜索的政府信息')
+  govSearching.value = true; govSearched.value = false
+  try {
+    const { data } = await client.get('/reports/admin-division/search', {
+      params: { q: govQuery.value.trim() },
+    })
+    govResults.value = data.data?.results || []
+    govSearched.value = true
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '搜索失败')
+  } finally { govSearching.value = false }
 }
 </script>
