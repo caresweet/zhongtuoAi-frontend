@@ -161,6 +161,15 @@ export function getTemplateFields(sessionId) {
   return client.get(`/reports/generate/${sessionId}/fields`)
 }
 
+// 基础资料弹窗：字段字典（稳评/复垦）与保存
+export function getIntakeSchema(domain) {
+  return client.get('/reports/intake/schema', { params: { domain } })
+}
+
+export function saveIntake(sessionId, payload) {
+  return client.post(`/reports/generate/${sessionId}/intake`, payload)
+}
+
 // ═══════════════════════════════════════════════════════
 // Chapter-by-Chapter Generation API
 // ═══════════════════════════════════════════════════════

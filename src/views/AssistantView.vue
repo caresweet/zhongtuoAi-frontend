@@ -205,6 +205,10 @@
         </div>
         <div class="up-btns">
           <button class="ubtn" @click.stop="clickFolder" :disabled="isRunning">📁 选择文件夹（整批上传）</button>
+          <button v-if="domain !== 'bidding'" class="ubtn ubtn-intake"
+                  @click.stop="intakeOpen = true" :disabled="isRunning">
+            📝 在线填写基础资料
+          </button>
           <button v-if="files.length && !isRunning" class="ubtn ubtn-clear" @click="files=[]">清空全部</button>
         </div>
       </section>
@@ -533,6 +537,11 @@
       </div>
     </div>
   </div>
+
+  <!-- 基础资料弹窗：稳评/复垦可在线填写，不必上传 Excel -->
+  <IntakeFormModal v-model="intakeOpen" :domain="domain"
+                   :session-id="reportStore.sessionId || ''"
+                   @saved="onIntakeSaved" />
 </template>
 
 <script setup>
@@ -543,6 +552,7 @@ import { useAuthStore } from '@/stores/auth'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { authFetch, getSessionGaps } from '@/api/report'
 import { downloadFile } from '@/utils/download'
+import IntakeFormModal from '@/components/IntakeFormModal.vue'
 
 const reportStore = useReportStore()
 const authStore = useAuthStore()
@@ -723,6 +733,17 @@ function goHistory() { router.push('/app/history') }
 const workflowLogs = ref([])
 // 缺口清单（生成完成后提示「这章缺什么」）—— 不写进交付稿
 const gaps = ref(null)
+// 基础资料在线填写弹窗（稳评/复垦，替代上传 Excel）
+const intakeOpen = ref(false)
+function onIntakeSaved(d) {
+  const n = d?.changed_count ?? (d?.changed || []).length ?? 0
+  ElNotification({
+    title: '基础资料已保存',
+    message: `已写入 ${n} 项；生成时会直接使用，不需要再上传 Excel。`
+      + ((d?.missing || []).length ? ` 还有 ${d.missing.length} 项可稍后补。` : ''),
+    type: 'success', duration: 6000,
+  })
+}
 // 交付体检（80% 可用率目标）：{ rate, total, flagged, below_target, items[] }
 const audit = ref(null)
 // 交付闸门（要求覆盖 + 字数预算）：deliverable=false 时提示「不可交付」
@@ -1746,6 +1767,8 @@ function fmtSize(b) { if (!b) return ''; return b < 1024 ? b + 'B' : b < 1048576
 .ubtn:hover { background: #f3f4f6; }
 .ubtn:disabled { opacity: .5; cursor: not-allowed; }
 .ubtn-clear { color: #ef4444; border-color: #fca5a5; }
+.ubtn-intake { color: #1d4ed8; border-color: #bfdbfe; background: #eff6ff; }
+.ubtn-intake:hover { background: #dbeafe; }
 
 /* Generate */
 .gen-row { display: flex; gap: 10px; }
