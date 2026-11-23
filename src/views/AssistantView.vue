@@ -355,6 +355,17 @@
             </ul>
           </div>
 
+          <!-- 复垦装配审计：目录页码/章节号/表题/地类编码等装配层问题 -->
+          <div v-if="reclamationAudit.length" class="deliver-block">
+            <p class="deliver-title">⚠️ 复垦装配审计仍有 {{ reclamationAudit.length }} 项：</p>
+            <ul class="gap-list">
+              <li v-for="(a, i) in reclamationAudit" :key="'ra' + i" class="gap-item">
+                <span class="gap-kind">审计</span>
+                <span class="gap-detail">{{ a }}</span>
+              </li>
+            </ul>
+          </div>
+
           <!-- 覆盖矩阵：缺的审查要点（含依据） -->
           <ul v-if="coverage && coverage.missing && coverage.missing.length" class="gap-list">
             <li v-for="(m, i) in coverage.missing" :key="'c' + i" :class="['gap-item', m.severity]">
@@ -751,6 +762,7 @@ const coverage = ref(null)
 const wordBudget = ref(null)
 const deliverable = ref(null)
 const blockers = ref([])
+const reclamationAudit = ref([])
 const auditPct = computed(() => Math.round(((audit.value?.rate) || 0) * 1000) / 10)
 const logBody = ref(null)
 const missingFields = ref([])
@@ -1254,6 +1266,7 @@ watch(() => reportStore.phase, async (p) => {
       wordBudget.value = res?.data?.word_budget || null
       deliverable.value = res?.data?.deliverable ?? null
       blockers.value = res?.data?.blockers || []
+      reclamationAudit.value = res?.data?.reclamation_audit || []
       // 交付体检优先播报：先告诉用户「能不能直接用、要扫哪几处」
       if (audit.value?.total) {
         const pct = auditPct.value
@@ -1659,6 +1672,7 @@ function resetAll() {
   wordBudget.value = null
   deliverable.value = null
   blockers.value = []
+  reclamationAudit.value = []
   if (_logTimer) clearInterval(_logTimer)
   files.value = []
   _maxPct = 0
